@@ -16,7 +16,7 @@ q_dot = [
 	v * cos(theta_t);
 	v * sin(theta_t);
 	(v / L) * tan(phi);
-	(v / d) * sin(theta_l - theta_t) - (v/L)*tan(phi) - (v*cos(theta_l-theta_t)*(d*cos(theta_l-theta_t) - L*tan(phi)))/d
+	(v / d) * sin(theta_t - theta_l)
 	];
 
 if ~exist('./gen', 'dir')
