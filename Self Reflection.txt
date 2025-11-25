@@ -42,6 +42,6 @@ Evan
 
 William (Optimization Lead):
 What has been good:
-
+work on the project overview
 What needs improvement:
-
+better understanding on the whole code structure to achieve technical goals
