@@ -18,8 +18,8 @@ u0 = zeros(2 * params.N, 1);
 options = optimoptions('fmincon', 'Display', 'iter', 'MaxFunctionEvaluations', 50000);
 
 % Run fmincon
-[u_opt, fval, exitflag, output] = fmincon(@(u) objective_function(u, q0, params), ...
+[u_opt, fval, exitflag, output] = fmincon(@(u) forward_point_objective(u, q0, params), ...
 	u0, [], [], [], [], [], [], ...
-	@(u) constraint_function(u, q0, params), options);
+	@(u) forward_point_constraints(u, q0, params), options);
 
-simulate_and_plot(u_opt, q0, params);
+simulate(u_opt, q0, params);

@@ -1,4 +1,4 @@
-function [c, ceq] = constraint_function(u, q0, params)
+function [c, ceq] = forward_point_constraints(u, q0, params)
 u = reshape(u, 2, params.N);
 
 % Simulate the system forward in time

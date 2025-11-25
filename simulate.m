@@ -1,4 +1,4 @@
-function simulate_and_plot(u_opt, q0, params)
+function simulate(u_opt, q0, params)
 
 u = reshape(u_opt, 2, params.N);
 

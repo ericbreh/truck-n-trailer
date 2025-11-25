@@ -1,4 +1,4 @@
-function J = objective_function(u, q0, params)
+function J = forward_path_objective(u, q0, params)
 u = reshape(u, 2, params.N);
 v = u(1, :);
 phi = u(2, :);
