@@ -27,6 +27,10 @@
             pkgs.libGL
             pkgs.libGLU
             pkgs.libxcb
+            pkgs.libxext
+            pkgs.libx11
+            pkgs.libsm
+            pkgs.libice
           ];
           shellHook = ''
             if [ ! -d ".venv" ]; then

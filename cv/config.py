@@ -49,7 +49,7 @@ REFERENCE_WORLD_COORDS_CM = {
 MARKER_IMAGE_SIZE_PX = 200    # pixel size of the output PNG (square)
 
 # Camera
-CAMERA_INDEX = 0   # OpenCV camera index (0 = default/first USB webcam)
+CAMERA_INDEX = 4
 
 # Chessboard calibration
 CHESSBOARD_SIZE = (9, 6)
