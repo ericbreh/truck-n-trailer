@@ -6,14 +6,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
     ARUCO_DICT,
-    MARKER_IMAGE_SIZE_PX,
     MARKERS_DIR,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,
 )
 
 def save_marker(marker_id: int, label: str) -> None:
-    img = cv2.aruco.generateImageMarker(ARUCO_DICT, marker_id, MARKER_IMAGE_SIZE_PX)
+    img = cv2.aruco.generateImageMarker(ARUCO_DICT, marker_id, 200)
     filename = MARKERS_DIR / f"marker_{marker_id:02d}_{label.replace(' ', '_')}.png"
     cv2.imwrite(str(filename), img)
     print(f"  Saved: {filename.name}  (ID {marker_id})")

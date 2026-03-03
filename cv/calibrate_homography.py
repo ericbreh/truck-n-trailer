@@ -12,8 +12,16 @@ from config import (
     ARUCO_DICT,
     ARUCO_PARAMS,
     REFERENCE_MARKER_IDS,
-    REFERENCE_WORLD_COORDS_CM,
+    WORKSPACE_WIDTH_CM,
+    WORKSPACE_HEIGHT_CM,
 )
+
+REFERENCE_WORLD_COORDS_CM = {
+    10: (0.0,               0.0),
+    11: (WORKSPACE_WIDTH_CM, 0.0),
+    12: (WORKSPACE_WIDTH_CM, WORKSPACE_HEIGHT_CM),
+    13: (0.0,               WORKSPACE_HEIGHT_CM),
+}
 
 
 def load_camera_params():

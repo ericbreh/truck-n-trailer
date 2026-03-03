@@ -9,10 +9,11 @@ from config import (
     CAMERA_INDEX,
     CAMERA_PARAMS_PATH,
     CALIBRATION_IMAGES_DIR,
-    CHESSBOARD_SIZE,
-    CHESSBOARD_SQUARE_SIZE_CM,
-    MIN_CALIBRATION_FRAMES,
 )
+
+CHESSBOARD_SIZE = (9, 6)
+CHESSBOARD_SQUARE_SIZE_CM = 2.5
+MIN_CALIBRATION_FRAMES = 15
 
 # 3D object points for one chessboard frame (z=0, flat plane)
 objp = np.zeros((CHESSBOARD_SIZE[0] * CHESSBOARD_SIZE[1], 3), np.float32)
@@ -32,7 +33,7 @@ def main():
     frame_count = 0
     image_size = None
 
-    print(f"Controls: [s] capture frame  [q] quit and compute")
+    print("Controls: [s] capture frame  [q] quit and compute")
     print(f"Need at least {MIN_CALIBRATION_FRAMES} frames. Hold the chessboard at varied angles.")
 
     while True:
