@@ -20,7 +20,18 @@
             python3
             uv
           ];
-          # LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.stdenv.cc.cc
+            pkgs.zlib
+            pkgs.glib
+            pkgs.libGL
+            pkgs.libGLU
+            pkgs.libxcb
+            pkgs.libxext
+            pkgs.libx11
+            pkgs.libsm
+            pkgs.libice
+          ];
           shellHook = ''
             if [ ! -d ".venv" ]; then
               uv venv
