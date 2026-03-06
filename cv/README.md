@@ -4,8 +4,8 @@ This folder contains the computer vision pipeline for tracking a truck and trail
 
 It outputs each object's:
 
-- position `(x, y)` in centimeters
-- heading angle in degrees
+- position `(x, y)` in world centimeters
+- heading angle in the world frame
 
 ## To run
 
@@ -15,5 +15,5 @@ It outputs each object's:
    - `python cv/calibrate_camera.py`
 3. Calibrate workspace homography (redo if camera/workspace moves):
    - `python cv/calibrate_homography.py`
-4. Run live detection:
+4. Run detection:
    - `python cv/detect.py`
