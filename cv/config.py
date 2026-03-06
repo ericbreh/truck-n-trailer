@@ -2,10 +2,7 @@ import cv2
 from pathlib import Path
 
 # Paths
-CV_DIR = Path(__file__).parent
-MARKERS_DIR = CV_DIR / "markers"
-CALIBRATION_DIR = CV_DIR / "calibration"
-CALIBRATION_IMAGES_DIR = CALIBRATION_DIR / "images"
+CALIBRATION_DIR = Path(__file__).parent / "calibration"
 CAMERA_PARAMS_PATH = CALIBRATION_DIR / "camera_params.npz"
 HOMOGRAPHY_PATH = CALIBRATION_DIR / "homography.npz"
 
@@ -26,10 +23,5 @@ REFERENCE_MARKER_IDS = {
 }
 
 # Real-world positions of the reference marker CENTERS in cm.
-# Edit these to match your measured workspace dimensions before running
-# calibrate_homography.py.
 WORKSPACE_WIDTH_CM = 100.0
 WORKSPACE_HEIGHT_CM = 100.0
-
-# Camera
-CAMERA_INDEX = 4

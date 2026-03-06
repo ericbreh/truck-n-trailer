@@ -6,10 +6,11 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    CAMERA_INDEX,
     CAMERA_PARAMS_PATH,
-    CALIBRATION_IMAGES_DIR,
 )
+from camera import open_configured_camera
+
+CALIBRATION_IMAGES_DIR = Path(__file__).parent / "calibration" / "images"
 
 CHESSBOARD_SIZE = (9, 6)
 CHESSBOARD_SQUARE_SIZE_CM = 2.5
@@ -23,9 +24,8 @@ objp *= CHESSBOARD_SQUARE_SIZE_CM
 def main():
     CALIBRATION_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    if not cap.isOpened():
-        print("Error: could not open camera.")
+    cap = open_configured_camera()
+    if cap is None:
         return
 
     obj_points = []  # 3D points in real world space

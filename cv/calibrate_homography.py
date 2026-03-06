@@ -6,7 +6,6 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    CAMERA_INDEX,
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
     ARUCO_DICT,
@@ -15,6 +14,7 @@ from config import (
     WORKSPACE_WIDTH_CM,
     WORKSPACE_HEIGHT_CM,
 )
+from camera import open_configured_camera
 
 REFERENCE_WORLD_COORDS_CM = {
     10: (0.0,               0.0),
@@ -37,9 +37,8 @@ def main():
     if K is None:
         return
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    if not cap.isOpened():
-        print("Error: could not open camera.")
+    cap = open_configured_camera()
+    if cap is None:
         return
 
     print("Place the 4 reference markers at the workspace corners.")

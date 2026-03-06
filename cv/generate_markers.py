@@ -4,9 +4,10 @@ import cv2
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+MARKERS_DIR = Path(__file__).parent / "markers"
+
 from config import (
     ARUCO_DICT,
-    MARKERS_DIR,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,
 )

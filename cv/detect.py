@@ -6,13 +6,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    CAMERA_INDEX,
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
     ARUCO_DICT,
     ARUCO_PARAMS,
     TRACKING_MARKER_IDS,
 )
+from camera import open_configured_camera
 
 
 def load_calibration():
@@ -56,11 +56,9 @@ def main():
     if K is None:
         return
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    if not cap.isOpened():
-        print("Error: could not open camera.")
+    cap = open_configured_camera()
+    if cap is None:
         return
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     detector = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
