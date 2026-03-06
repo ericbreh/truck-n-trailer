@@ -1,7 +1,3 @@
-"""
-Shared constants for the truck-n-trailer CV pipeline.
-"""
-
 import cv2
 from pathlib import Path
 
