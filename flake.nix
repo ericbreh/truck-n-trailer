@@ -19,6 +19,9 @@
           buildInputs = [
             python3
             uv
+            ipopt
+            python3Packages.pyqt6
+            qt6.qtwayland
           ];
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.stdenv.cc.cc
@@ -37,6 +40,7 @@
               uv venv
             fi
             source .venv/bin/activate
+            export PYTHONPATH="${python3Packages.pyqt6}/${python3.sitePackages}:$PYTHONPATH"
           '';
         };
     });
