@@ -1,45 +1,7 @@
 #!/usr/bin/env python3
 
 import math
-import os
-from importlib import import_module
-from typing import Any, cast
-
-import matplotlib
-
-
-def select_backend() -> str:
-    def backend_available(name: str) -> bool:
-        try:
-            if name == "QtAgg":
-                import_module("matplotlib.backends.backend_qtagg")
-                for qt_mod in ("PyQt6", "PySide6", "PyQt5", "PySide2"):
-                    try:
-                        import_module(qt_mod)
-                        return True
-                    except Exception:
-                        continue
-                return False
-            if name == "TkAgg":
-                import_module("tkinter")
-                import_module("matplotlib.backends.backend_tkagg")
-                return True
-        except Exception:
-            return False
-        return False
-
-    has_gui = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
-    if has_gui:
-        for backend in ("QtAgg", "TkAgg"):
-            if backend_available(backend):
-                matplotlib.use(backend, force=True)
-                return backend
-    matplotlib.use("Agg", force=True)
-    return "Agg"
-
-
-SELECTED_BACKEND = select_backend()
-NON_INTERACTIVE_BACKENDS = {"agg", "pdf", "svg", "ps", "cairo", "template"}
+from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
@@ -80,21 +42,18 @@ def build_model(p: dict) -> pyo.ConcreteModel:
     m.a = pyo.Var(m.K, bounds=(p["a_min"], p["a_max"]))
     m.phi_dot = pyo.Var(m.K, bounds=(p["phi_dot_min"], p["phi_dot_max"]))
 
-    def dyn_rule(model: pyo.ConcreteModel, s: int, k: int):
-        x = cast(Any, model.x)
-        a = cast(Any, model.a)
-        phi_dot = cast(Any, model.phi_dot)
+    def dyn_rule(model: Any, s: int, k: int):
         if s == 0:
-            return x[0, k + 1] == x[0, k] + dt * x[4, k] * pyo.cos(x[2, k])
+            return model.x[0, k + 1] == model.x[0, k] + dt * model.x[4, k] * pyo.cos(model.x[2, k])
         if s == 1:
-            return x[1, k + 1] == x[1, k] + dt * x[4, k] * pyo.sin(x[2, k])
+            return model.x[1, k + 1] == model.x[1, k] + dt * model.x[4, k] * pyo.sin(model.x[2, k])
         if s == 2:
-            return x[2, k + 1] == x[2, k] + dt * (x[4, k] / L) * pyo.tan(x[5, k])
+            return model.x[2, k + 1] == model.x[2, k] + dt * (model.x[4, k] / L) * pyo.tan(model.x[5, k])
         if s == 3:
-            return x[3, k + 1] == x[3, k] + dt * (x[4, k] / d) * pyo.sin(x[2, k] - x[3, k])
+            return model.x[3, k + 1] == model.x[3, k] + dt * (model.x[4, k] / d) * pyo.sin(model.x[2, k] - model.x[3, k])
         if s == 4:
-            return x[4, k + 1] == x[4, k] + dt * a[k]
-        return x[5, k + 1] == x[5, k] + dt * phi_dot[k]
+            return model.x[4, k + 1] == model.x[4, k] + dt * model.a[k]
+        return model.x[5, k + 1] == model.x[5, k] + dt * model.phi_dot[k]
 
     m.dyn = pyo.Constraint(m.S, m.K, rule=dyn_rule)
 
@@ -105,42 +64,35 @@ def build_model(p: dict) -> pyo.ConcreteModel:
         rule=lambda model, t: pyo.inequality(-p["max_jackknife_angle"], model.x[2, t] - model.x[3, t], p["max_jackknife_angle"]),
     )
 
-    def state_cost(model: pyo.ConcreteModel, t: int):
-        x = cast(Any, model.x)
+    def state_cost(model: Any, t: int):
         return (
-            p["w_pos"] * ((x[0, t] - q_des[0]) ** 2 + (x[1, t] - q_des[1]) ** 2)
-            + p["w_theta_t"] * (x[2, t] - q_des[2]) ** 2
-            + p["w_theta_l"] * (x[3, t] - q_des[3]) ** 2
-            + p["w_v"] * (x[4, t] - q_des[4]) ** 2
-            + p["w_phi"] * (x[5, t] - q_des[5]) ** 2
+            p["w_pos"] * ((model.x[0, t] - q_des[0]) ** 2 + (model.x[1, t] - q_des[1]) ** 2)
+            + p["w_theta_t"] * (model.x[2, t] - q_des[2]) ** 2
+            + p["w_theta_l"] * (model.x[3, t] - q_des[3]) ** 2
+            + p["w_v"] * (model.x[4, t] - q_des[4]) ** 2
+            + p["w_phi"] * (model.x[5, t] - q_des[5]) ** 2
         )
 
-    def obj_rule(model: pyo.ConcreteModel):
-        a = cast(Any, model.a)
-        phi_dot = cast(Any, model.phi_dot)
+    def obj_rule(model: Any):
         terminal = state_cost(model, N)
-        effort = sum(p["w_a"] * a[k] ** 2 + p["w_phi_dot"] * phi_dot[k] ** 2 for k in range(N))
+        effort = sum(p["w_a"] * model.a[k] ** 2 + p["w_phi_dot"] * model.phi_dot[k] ** 2 for k in range(N))
         return terminal + effort
 
     m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
     return m
 
 
-def set_guess(m: pyo.ConcreteModel, u_guess: np.ndarray) -> None:
-    a = cast(Any, m.a)
-    phi_dot = cast(Any, m.phi_dot)
+def set_guess(m: Any, u_guess: np.ndarray) -> None:
     for k in range(u_guess.shape[1]):
-        a[k].set_value(float(u_guess[0, k]))
-        phi_dot[k].set_value(float(u_guess[1, k]))
+        m.a[k].set_value(float(u_guess[0, k]))
+        m.phi_dot[k].set_value(float(u_guess[1, k]))
 
 
-def extract_u(m: pyo.ConcreteModel, N: int) -> np.ndarray:
-    a = cast(Any, m.a)
-    phi_dot = cast(Any, m.phi_dot)
+def extract_u(m: Any, N: int) -> np.ndarray:
     u = np.zeros((2, N), dtype=float)
     for k in range(N):
-        u[0, k] = pyo.value(a[k])
-        u[1, k] = pyo.value(phi_dot[k])
+        u[0, k] = pyo.value(m.a[k])
+        u[1, k] = pyo.value(m.phi_dot[k])
     return u
 
 
@@ -148,8 +100,7 @@ def run_mpc(p: dict) -> tuple[np.ndarray, np.ndarray]:
     N, dt = p["N"], p["dt"]
     q = p["q0"].copy().astype(float)
 
-    m = build_model(p)
-    x = cast(Any, m.x)
+    m: Any = build_model(p)
     solver = pyo.SolverFactory("ipopt")
     solver.options["max_iter"] = p.get("solver_max_iter", 500)
     solver.options["tol"] = p.get("solver_tol", 1e-6)
@@ -164,7 +115,7 @@ def run_mpc(p: dict) -> tuple[np.ndarray, np.ndarray]:
             break
 
         for s in range(6):
-            x[s, 0].fix(float(q[s]))
+            m.x[s, 0].fix(float(q[s]))
 
         u_guess[0, :] = np.clip(u_guess[0, :], p["a_min"], p["a_max"])
         u_guess[1, :] = np.clip(u_guess[1, :], p["phi_dot_min"], p["phi_dot_max"])
@@ -201,27 +152,8 @@ def run_mpc(p: dict) -> tuple[np.ndarray, np.ndarray]:
 
     return np.array(q_hist), np.array(u_hist)
 
-
-def plot_result(q_hist: np.ndarray, p: dict, output_path: str) -> None:
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(q_hist[:, 0], q_hist[:, 1], "b-", linewidth=2, label="trajectory")
-    ax.plot(q_hist[0, 0], q_hist[0, 1], "go", label="start")
-    ax.plot(p["q_des"][0], p["q_des"][1], "rx", markersize=10, mew=2, label="target")
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, alpha=0.3)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_title("6-state MPC point navigation")
-    ax.legend(loc="best")
-    plt.tight_layout()
-    fig.savefig(output_path, dpi=150)
-
-    if matplotlib.get_backend().lower() not in NON_INTERACTIVE_BACKENDS:
-        plt.show()
-    plt.close(fig)
-
-
-def animate_result(q_hist: np.ndarray, p: dict, output_path: str) -> None:
+     
+def animate_result(q_hist: np.ndarray, p: dict) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, alpha=0.3)
@@ -266,13 +198,12 @@ def animate_result(q_hist: np.ndarray, p: dict, output_path: str) -> None:
 
     _anim = FuncAnimation(fig, update, init_func=init, frames=len(q_hist), interval=80, blit=True)
 
-    if SELECTED_BACKEND.lower() in NON_INTERACTIVE_BACKENDS:
-        _anim.save(output_path, writer=PillowWriter(fps=12))
-        plt.close(fig)
-        print(f"Saved animation to {output_path}")
+    if plt.get_backend().lower() == "agg":
+        _anim.save('parking.gif', writer=PillowWriter(fps=12))
+        print("Saved animation to parking.gif")
     else:
         plt.show()
-        plt.close(fig)
+    plt.close(fig)
 
 
 def main() -> None:
@@ -292,15 +223,15 @@ def main() -> None:
         "phi_min": -0.6,
         "phi_max": 0.6,
         "max_jackknife_angle": math.pi / 2.0,
-        "w_pos": 8.0,
-        "w_theta_t": 0.5,
-        "w_theta_l": 0.5,
-        "w_v": 0.3,
-        "w_phi": 0.3,
-        "w_a": 0.05,
-        "w_phi_dot": 0.05,
-        "max_steps": 80,
-        "target_tol": 0.1,
+        "w_pos": 1,
+        "w_theta_t": 1,
+        "w_theta_l": 1,
+        "w_v": 0,
+        "w_phi": 0,
+        "w_a": 0,
+        "w_phi_dot": 0,
+        "max_steps": 100,
+        "target_tol": 0.01,
         "solver_max_iter": 600,
         "solver_tol": 1e-6,
     }
@@ -313,14 +244,7 @@ def main() -> None:
     if u_hist.size:
         print(f"Last control: a={u_hist[-1, 0]:.3f}, phi_dot={u_hist[-1, 1]:.3f}")
 
-    out_file = "parking.gif"
-    try:
-        animate_result(q_hist, params, out_file)
-    except Exception as exc:
-        print(f"Animation failed ({exc})")
-        png_file = "parking_result.png"
-        plot_result(q_hist, params, png_file)
-        print(f"Saved plot to {png_file}")
+    animate_result(q_hist, params)
 
 
 if __name__ == "__main__":
