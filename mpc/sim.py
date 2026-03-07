@@ -10,6 +10,48 @@ import numpy as np
 import pyomo.environ as pyo
 
 
+@dataclass
+class MPCConfig:
+    # Vehicle parameters
+    L: float = 1.0
+    d: float = 1.0
+    
+    # Simulation settings
+    dt: float = 0.1
+    N: int = 50
+    max_steps: int = 500
+    target_tol: float = 0.05
+    angle_tol: float = 0.1
+    
+    # State and Control bounds
+    a_min: float = -1.5
+    a_max: float = 1.5
+    phi_dot_min: float = -0.8
+    phi_dot_max: float = 0.8
+    v_min: float = -2.0
+    v_max: float = 2.0
+    phi_min: float = -0.6
+    phi_max: float = 0.6
+    max_jackknife_angle: float = math.pi / 2.0
+    
+    # Costs
+    w_pos: float = 1.0
+    w_theta_t: float = 10.0
+    w_theta_l: float = 100.0
+    w_v: float = 10.0
+    w_phi: float = 10.0
+    w_a: float = 0.1
+    w_phi_dot: float = 0.1
+    
+    # Initial and Desired states
+    q0: np.ndarray = field(default_factory=lambda: np.array([2, 4, 1.57, 1.57, 0, 0]))
+    q_des: np.ndarray = field(default_factory=lambda: np.array([0, 0, 0, 0, 0, 0]))
+    
+    # Solver settings
+    solver_max_iter: int = 600
+    solver_tol: float = 1e-6
+
+
 def wrap_angle(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
 
@@ -28,47 +70,6 @@ def dynamics(q: np.ndarray, u: np.ndarray, L: float, d: float) -> np.ndarray:
         ],
         dtype=float,
     )
-
-
-@dataclass
-class MPCConfig:
-    # Vehicle parameters
-    L: float = 1.0
-    d: float = 5.0
-    
-    # Simulation settings
-    dt: float = 0.1
-    N: int = 20
-    max_steps: int = 100
-    target_tol: float = 0.01
-    
-    # State and Control bounds
-    a_min: float = -1.5
-    a_max: float = 1.5
-    phi_dot_min: float = -0.8
-    phi_dot_max: float = 0.8
-    v_min: float = -2.0
-    v_max: float = 2.0
-    phi_min: float = -0.6
-    phi_max: float = 0.6
-    max_jackknife_angle: float = math.pi / 2.0
-    
-    # Costs
-    w_pos: float = 1.0
-    w_theta_t: float = 1.0
-    w_theta_l: float = 1.0
-    w_v: float = 0.0
-    w_phi: float = 0.0
-    w_a: float = 0.0
-    w_phi_dot: float = 0.0
-    
-    # Initial and Desired states
-    q0: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
-    q_des: np.ndarray = field(default_factory=lambda: np.array([8.0, 3.0, 0.0, 0.0, 0.0, 0.0]))
-    
-    # Solver settings
-    solver_max_iter: int = 600
-    solver_tol: float = 1e-6
 
 
 class TruckTrailerMPC:
@@ -173,7 +174,14 @@ class TruckTrailerMPC:
 
         for step in range(self.cfg.max_steps):
             pos_err = float(np.linalg.norm(q[:2] - self.cfg.q_des[:2]))
-            if pos_err <= self.cfg.target_tol:
+            ang_err_t = abs(wrap_angle(q[2] - self.cfg.q_des[2]))
+            ang_err_l = abs(wrap_angle(q[3] - self.cfg.q_des[3]))
+
+            if (
+                pos_err <= self.cfg.target_tol
+                and ang_err_t <= self.cfg.angle_tol
+                and ang_err_l <= self.cfg.angle_tol
+            ):
                 break
 
             u_opt = self.solve(q, u_guess)
@@ -190,7 +198,9 @@ class TruckTrailerMPC:
             u_hist.append(u0.copy())
             u_guess = np.hstack([u_opt[:, 1:], u_opt[:, -1:]])
 
-            print(f"step {step:03d} | a={u0[0]: .3f} | phi_dot={u0[1]: .3f} | pos_err={pos_err: .3f}")
+            print(
+                f"step {step:03d} | pos_err={pos_err: .3f} | ang_err_t={ang_err_t: .3f} | ang_err_l={ang_err_l: .3f}"
+            )
 
         return np.array(q_hist), np.array(u_hist)
 
@@ -255,8 +265,13 @@ def main() -> None:
     q_hist, u_hist = mpc.simulate()
     
     final_err = float(np.linalg.norm(q_hist[-1, :2] - cfg.q_des[:2]))
+    final_ang_t = abs(wrap_angle(q_hist[-1, 2] - cfg.q_des[2]))
+    final_ang_l = abs(wrap_angle(q_hist[-1, 3] - cfg.q_des[3]))
+
     print(f"Closed-loop steps: {len(q_hist) - 1}")
-    print(f"Final position error: {final_err:.3f} m")
+    print(f"Final pos error: {final_err:.3f} m")
+    print(f"Final ang error (truck): {final_ang_t:.3f} rad")
+    print(f"Final ang error (trailer): {final_ang_l:.3f} rad")
 
     if q_hist.size:
         animate_result(q_hist, cfg)
