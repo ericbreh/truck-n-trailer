@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+from dataclasses import dataclass, field
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -29,143 +30,184 @@ def dynamics(q: np.ndarray, u: np.ndarray, L: float, d: float) -> np.ndarray:
     )
 
 
-def build_model(p: dict) -> pyo.ConcreteModel:
-    N, dt, L, d = p["N"], p["dt"], p["L"], p["d"]
-    q_des = p["q_des"]
+@dataclass
+class MPCConfig:
+    # Vehicle parameters
+    L: float = 1.0
+    d: float = 5.0
+    
+    # Simulation settings
+    dt: float = 0.1
+    N: int = 20
+    max_steps: int = 100
+    target_tol: float = 0.01
+    
+    # State and Control bounds
+    a_min: float = -1.5
+    a_max: float = 1.5
+    phi_dot_min: float = -0.8
+    phi_dot_max: float = 0.8
+    v_min: float = -2.0
+    v_max: float = 2.0
+    phi_min: float = -0.6
+    phi_max: float = 0.6
+    max_jackknife_angle: float = math.pi / 2.0
+    
+    # Costs
+    w_pos: float = 1.0
+    w_theta_t: float = 1.0
+    w_theta_l: float = 1.0
+    w_v: float = 0.0
+    w_phi: float = 0.0
+    w_a: float = 0.0
+    w_phi_dot: float = 0.0
+    
+    # Initial and Desired states
+    q0: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+    q_des: np.ndarray = field(default_factory=lambda: np.array([8.0, 3.0, 0.0, 0.0, 0.0, 0.0]))
+    
+    # Solver settings
+    solver_max_iter: int = 600
+    solver_tol: float = 1e-6
 
-    m = pyo.ConcreteModel()
-    m.T = pyo.RangeSet(0, N)
-    m.K = pyo.RangeSet(0, N - 1)
-    m.S = pyo.RangeSet(0, 5)
 
-    m.x = pyo.Var(m.S, m.T, domain=pyo.Reals)
-    m.a = pyo.Var(m.K, bounds=(p["a_min"], p["a_max"]))
-    m.phi_dot = pyo.Var(m.K, bounds=(p["phi_dot_min"], p["phi_dot_max"]))
+class TruckTrailerMPC:
+    def __init__(self, cfg: MPCConfig):
+        self.cfg = cfg
+        self.model: Any = self._build_model()
+        self.solver = pyo.SolverFactory("ipopt")
+        self.solver.options["max_iter"] = self.cfg.solver_max_iter
+        self.solver.options["tol"] = self.cfg.solver_tol
 
-    def dyn_rule(model: Any, s: int, k: int):
-        if s == 0:
-            return model.x[0, k + 1] == model.x[0, k] + dt * model.x[4, k] * pyo.cos(model.x[2, k])
-        if s == 1:
-            return model.x[1, k + 1] == model.x[1, k] + dt * model.x[4, k] * pyo.sin(model.x[2, k])
-        if s == 2:
-            return model.x[2, k + 1] == model.x[2, k] + dt * (model.x[4, k] / L) * pyo.tan(model.x[5, k])
-        if s == 3:
-            return model.x[3, k + 1] == model.x[3, k] + dt * (model.x[4, k] / d) * pyo.sin(model.x[2, k] - model.x[3, k])
-        if s == 4:
-            return model.x[4, k + 1] == model.x[4, k] + dt * model.a[k]
-        return model.x[5, k + 1] == model.x[5, k] + dt * model.phi_dot[k]
+    def _build_model(self) -> pyo.ConcreteModel:
+        c = self.cfg
+        m = pyo.ConcreteModel()
+        m.T = pyo.RangeSet(0, c.N)
+        m.K = pyo.RangeSet(0, c.N - 1)
+        m.S = pyo.RangeSet(0, 5)
 
-    m.dyn = pyo.Constraint(m.S, m.K, rule=dyn_rule)
+        m.x = pyo.Var(m.S, m.T, domain=pyo.Reals)
+        m.a = pyo.Var(m.K, bounds=(c.a_min, c.a_max))
+        m.phi_dot = pyo.Var(m.K, bounds=(c.phi_dot_min, c.phi_dot_max))
 
-    m.vel_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(p["v_min"], model.x[4, t], p["v_max"]))
-    m.steer_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(p["phi_min"], model.x[5, t], p["phi_max"]))
-    m.jackknife = pyo.Constraint(
-        m.T,
-        rule=lambda model, t: pyo.inequality(-p["max_jackknife_angle"], model.x[2, t] - model.x[3, t], p["max_jackknife_angle"]),
-    )
+        # Dynamic Constraints
+        def dyn_rule(model: Any, s: int, k: int):
+            if s == 0:
+                return model.x[0, k + 1] == model.x[0, k] + c.dt * model.x[4, k] * pyo.cos(model.x[2, k])
+            if s == 1:
+                return model.x[1, k + 1] == model.x[1, k] + c.dt * model.x[4, k] * pyo.sin(model.x[2, k])
+            if s == 2:
+                return model.x[2, k + 1] == model.x[2, k] + c.dt * (model.x[4, k] / c.L) * pyo.tan(model.x[5, k])
+            if s == 3:
+                return model.x[3, k + 1] == model.x[3, k] + c.dt * (model.x[4, k] / c.d) * pyo.sin(model.x[2, k] - model.x[3, k])
+            if s == 4:
+                return model.x[4, k + 1] == model.x[4, k] + c.dt * model.a[k]
+            return model.x[5, k + 1] == model.x[5, k] + c.dt * model.phi_dot[k]
 
-    def state_cost(model: Any, t: int):
-        return (
-            p["w_pos"] * ((model.x[0, t] - q_des[0]) ** 2 + (model.x[1, t] - q_des[1]) ** 2)
-            + p["w_theta_t"] * (model.x[2, t] - q_des[2]) ** 2
-            + p["w_theta_l"] * (model.x[3, t] - q_des[3]) ** 2
-            + p["w_v"] * (model.x[4, t] - q_des[4]) ** 2
-            + p["w_phi"] * (model.x[5, t] - q_des[5]) ** 2
+        m.dyn = pyo.Constraint(m.S, m.K, rule=dyn_rule)
+
+        # Other Constraints
+        m.vel_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(c.v_min, model.x[4, t], c.v_max))
+        m.steer_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(c.phi_min, model.x[5, t], c.phi_max))
+        m.jackknife = pyo.Constraint(
+            m.T,
+            rule=lambda model, t: pyo.inequality(-c.max_jackknife_angle, model.x[2, t] - model.x[3, t], c.max_jackknife_angle),
         )
 
-    def obj_rule(model: Any):
-        terminal = state_cost(model, N)
-        effort = sum(p["w_a"] * model.a[k] ** 2 + p["w_phi_dot"] * model.phi_dot[k] ** 2 for k in range(N))
-        return terminal + effort
+        # Objective
+        def obj_rule(model: Any):
+            cost = (
+                c.w_pos * ((model.x[0, c.N] - c.q_des[0]) ** 2 + (model.x[1, c.N] - c.q_des[1]) ** 2)
+                + c.w_theta_t * (model.x[2, c.N] - c.q_des[2]) ** 2
+                + c.w_theta_l * (model.x[3, c.N] - c.q_des[3]) ** 2
+                + c.w_v * (model.x[4, c.N] - c.q_des[4]) ** 2
+                + c.w_phi * (model.x[5, c.N] - c.q_des[5]) ** 2
+            )
+            # Control effort
+            cost += sum(c.w_a * model.a[k] ** 2 + c.w_phi_dot * model.phi_dot[k] ** 2 for k in range(c.N))
+            return cost
 
-    m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
-    return m
+        m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
+        return m
 
+    def _set_guess(self, u_guess: np.ndarray) -> None:
+        m = self.model
+        for k in range(u_guess.shape[1]):
+            m.a[k].set_value(float(u_guess[0, k]))
+            m.phi_dot[k].set_value(float(u_guess[1, k]))
 
-def set_guess(m: Any, u_guess: np.ndarray) -> None:
-    for k in range(u_guess.shape[1]):
-        m.a[k].set_value(float(u_guess[0, k]))
-        m.phi_dot[k].set_value(float(u_guess[1, k]))
+    def _extract_u(self) -> np.ndarray:
+        m = self.model
+        u = np.zeros((2, self.cfg.N), dtype=float)
+        for k in range(self.cfg.N):
+            u[0, k] = pyo.value(m.a[k])
+            u[1, k] = pyo.value(m.phi_dot[k])
+        return u
 
-
-def extract_u(m: Any, N: int) -> np.ndarray:
-    u = np.zeros((2, N), dtype=float)
-    for k in range(N):
-        u[0, k] = pyo.value(m.a[k])
-        u[1, k] = pyo.value(m.phi_dot[k])
-    return u
-
-
-def run_mpc(p: dict) -> tuple[np.ndarray, np.ndarray]:
-    N, dt = p["N"], p["dt"]
-    q = p["q0"].copy().astype(float)
-
-    m: Any = build_model(p)
-    solver = pyo.SolverFactory("ipopt")
-    solver.options["max_iter"] = p.get("solver_max_iter", 500)
-    solver.options["tol"] = p.get("solver_tol", 1e-6)
-
-    u_guess = np.zeros((2, N), dtype=float)
-    q_hist = [q.copy()]
-    u_hist: list[np.ndarray] = []
-
-    for step in range(p["max_steps"]):
-        pos_err = float(np.linalg.norm(q[:2] - p["q_des"][:2]))
-        if pos_err <= p["target_tol"]:
-            break
-
+    def solve(self, q: np.ndarray, u_guess: np.ndarray) -> np.ndarray | None:
+        m = self.model
         for s in range(6):
             m.x[s, 0].fix(float(q[s]))
 
-        u_guess[0, :] = np.clip(u_guess[0, :], p["a_min"], p["a_max"])
-        u_guess[1, :] = np.clip(u_guess[1, :], p["phi_dot_min"], p["phi_dot_max"])
-        set_guess(m, u_guess)
+        u_guess[0, :] = np.clip(u_guess[0, :], self.cfg.a_min, self.cfg.a_max)
+        u_guess[1, :] = np.clip(u_guess[1, :], self.cfg.phi_dot_min, self.cfg.phi_dot_max)
+        self._set_guess(u_guess)
+
         try:
-            result = solver.solve(m, tee=False, load_solutions=False)
+            result = self.solver.solve(m, tee=False, load_solutions=False)
+            if result.solver.status not in (pyo.SolverStatus.ok, pyo.SolverStatus.warning):
+                return None
+            if result.solver.termination_condition not in (pyo.TerminationCondition.optimal, pyo.TerminationCondition.locallyOptimal):
+                return None
+            m.solutions.load_from(result)
+            return self._extract_u()
         except Exception as exc:
-            print(f"Solver failed at step {step}: {exc}")
-            break
+            print(f"Solver exception: {exc}")
+            return None
 
-        status = result.solver.status
-        term = result.solver.termination_condition
-        if status not in (pyo.SolverStatus.ok, pyo.SolverStatus.warning):
-            print(f"Solver status {status} at step {step}")
-            break
-        if term not in (pyo.TerminationCondition.optimal, pyo.TerminationCondition.locallyOptimal):
-            print(f"Solver stopped with {term} at step {step}")
-            break
+    def simulate(self) -> tuple[np.ndarray, np.ndarray]:
+        q = self.cfg.q0.copy().astype(float)
+        u_guess = np.zeros((2, self.cfg.N), dtype=float)
+        q_hist = [q.copy()]
+        u_hist: list[np.ndarray] = []
 
-        m.solutions.load_from(result)
+        for step in range(self.cfg.max_steps):
+            pos_err = float(np.linalg.norm(q[:2] - self.cfg.q_des[:2]))
+            if pos_err <= self.cfg.target_tol:
+                break
 
-        u_opt = extract_u(m, N)
-        u0 = u_opt[:, 0]
+            u_opt = self.solve(q, u_guess)
+            if u_opt is None:
+                print(f"Solver failed at step {step}")
+                break
 
-        q = q + dt * dynamics(q, u0, p["L"], p["d"])
-        q[2] = wrap_angle(q[2])
-        q[3] = wrap_angle(q[3])
+            u0 = u_opt[:, 0]
+            q = q + self.cfg.dt * dynamics(q, u0, self.cfg.L, self.cfg.d)
+            q[2] = wrap_angle(q[2])
+            q[3] = wrap_angle(q[3])
 
-        q_hist.append(q.copy())
-        u_hist.append(u0.copy())
-        u_guess = np.hstack([u_opt[:, 1:], u_opt[:, -1:]])
+            q_hist.append(q.copy())
+            u_hist.append(u0.copy())
+            u_guess = np.hstack([u_opt[:, 1:], u_opt[:, -1:]])
 
-        print(f"step {step:03d} | a={u0[0]: .3f} | phi_dot={u0[1]: .3f} | pos_err={pos_err: .3f}")
+            print(f"step {step:03d} | a={u0[0]: .3f} | phi_dot={u0[1]: .3f} | pos_err={pos_err: .3f}")
 
-    return np.array(q_hist), np.array(u_hist)
+        return np.array(q_hist), np.array(u_hist)
 
-     
-def animate_result(q_hist: np.ndarray, p: dict) -> None:
+
+def animate_result(q_hist: np.ndarray, cfg: MPCConfig) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, alpha=0.3)
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
 
-    all_x = np.r_[q_hist[:, 0], p["q_des"][0]]
-    all_y = np.r_[q_hist[:, 1], p["q_des"][1]]
+    all_x = np.r_[q_hist[:, 0], cfg.q_des[0]]
+    all_y = np.r_[q_hist[:, 1], cfg.q_des[1]]
     pad = 1.5
     ax.set_xlim(np.min(all_x) - pad, np.max(all_x) + pad)
     ax.set_ylim(np.min(all_y) - pad, np.max(all_y) + pad)
-    ax.plot(p["q_des"][0], p["q_des"][1], "rx", markersize=10, mew=2, label="target")
+    ax.plot(cfg.q_des[0], cfg.q_des[1], "rx", markersize=10, mew=2, label="target")
 
     path_line, = ax.plot([], [], "b-", linewidth=1.5, alpha=0.6, label="path")
     truck_line, = ax.plot([], [], "k-", linewidth=3.0, label="truck")
@@ -184,10 +226,10 @@ def animate_result(q_hist: np.ndarray, p: dict) -> None:
 
     def update(frame: int):
         x, y, theta_t, theta_l = q_hist[frame, 0], q_hist[frame, 1], q_hist[frame, 2], q_hist[frame, 3]
-        x_front = x + p["L"] * math.cos(theta_t)
-        y_front = y + p["L"] * math.sin(theta_t)
-        x_trailer = x - p["d"] * math.cos(theta_l)
-        y_trailer = y - p["d"] * math.sin(theta_l)
+        x_front = x + cfg.L * math.cos(theta_t)
+        y_front = y + cfg.L * math.sin(theta_t)
+        x_trailer = x - cfg.d * math.cos(theta_l)
+        y_trailer = y - cfg.d * math.sin(theta_l)
 
         path_line.set_data(q_hist[: frame + 1, 0], q_hist[: frame + 1, 1])
         truck_line.set_data([x, x_front], [y, y_front])
@@ -199,7 +241,7 @@ def animate_result(q_hist: np.ndarray, p: dict) -> None:
     _anim = FuncAnimation(fig, update, init_func=init, frames=len(q_hist), interval=80, blit=True)
 
     if plt.get_backend().lower() == "agg":
-        _anim.save('parking.gif', writer=PillowWriter(fps=12))
+        _anim.save("parking.gif", writer=PillowWriter(fps=12))
         print("Saved animation to parking.gif")
     else:
         plt.show()
@@ -207,44 +249,17 @@ def animate_result(q_hist: np.ndarray, p: dict) -> None:
 
 
 def main() -> None:
-    params = {
-        "L": 1.0,
-        "d": 5.0,
-        "dt": 0.1,
-        "N": 20,
-        "q0": np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-        "q_des": np.array([8.0, 3.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-        "a_min": -1.5,
-        "a_max": 1.5,
-        "phi_dot_min": -0.8,
-        "phi_dot_max": 0.8,
-        "v_min": -2.0,
-        "v_max": 2.0,
-        "phi_min": -0.6,
-        "phi_max": 0.6,
-        "max_jackknife_angle": math.pi / 2.0,
-        "w_pos": 1,
-        "w_theta_t": 1,
-        "w_theta_l": 1,
-        "w_v": 0,
-        "w_phi": 0,
-        "w_a": 0,
-        "w_phi_dot": 0,
-        "max_steps": 100,
-        "target_tol": 0.01,
-        "solver_max_iter": 600,
-        "solver_tol": 1e-6,
-    }
-
-    q_hist, u_hist = run_mpc(params)
-    final_err = float(np.linalg.norm(q_hist[-1, :2] - params["q_des"][:2]))
-
+    cfg = MPCConfig()
+    mpc = TruckTrailerMPC(cfg)
+    
+    q_hist, u_hist = mpc.simulate()
+    
+    final_err = float(np.linalg.norm(q_hist[-1, :2] - cfg.q_des[:2]))
     print(f"Closed-loop steps: {len(q_hist) - 1}")
     print(f"Final position error: {final_err:.3f} m")
-    if u_hist.size:
-        print(f"Last control: a={u_hist[-1, 0]:.3f}, phi_dot={u_hist[-1, 1]:.3f}")
 
-    animate_result(q_hist, params)
+    if q_hist.size:
+        animate_result(q_hist, cfg)
 
 
 if __name__ == "__main__":
