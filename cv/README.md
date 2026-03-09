@@ -10,10 +10,14 @@ It outputs each object's:
 ## To run
 
 1. Generate markers:
-   - `python cv/generate_markers.py`
 2. Calibrate camera intrinsics (one-time per camera):
-   - `python cv/calibrate_camera.py`
 3. Calibrate workspace homography (redo if camera/workspace moves):
-   - `python cv/calibrate_homography.py`
 4. Run detection:
-   - `python cv/detect.py`
+
+```sh
+# Run from repo root
+python -m cv.generate_markers
+python -m cv.calibrate_camera
+python -m cv.calibrate_homography
+python -m cv.detect
+```
