@@ -1,14 +1,11 @@
-import sys
-from pathlib import Path
 import cv2
 import numpy as np
+from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from config import (
+from cv.camera import open_configured_camera
+from cv.config import (
     CAMERA_PARAMS_PATH,
 )
-from camera import open_configured_camera
 
 CALIBRATION_IMAGES_DIR = Path(__file__).parent / "calibration" / "images"
 

@@ -1,12 +1,9 @@
-import sys
 from pathlib import Path
 import cv2
 
-sys.path.insert(0, str(Path(__file__).parent))
-
 MARKERS_DIR = Path(__file__).parent / "markers"
 
-from config import (
+from cv.config import (
     ARUCO_DICT,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,

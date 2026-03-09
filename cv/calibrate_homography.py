@@ -1,11 +1,7 @@
-import sys
-from pathlib import Path
 import cv2
 import numpy as np
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from config import (
+from cv.camera import open_configured_camera
+from cv.config import (
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
     ARUCO_DICT,
@@ -14,7 +10,6 @@ from config import (
     WORKSPACE_WIDTH_CM,
     WORKSPACE_HEIGHT_CM,
 )
-from camera import open_configured_camera
 
 REFERENCE_WORLD_COORDS_CM = {
     10: (0.0,               0.0),
