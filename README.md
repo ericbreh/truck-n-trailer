@@ -10,16 +10,23 @@ Reverse park a model truck and trailer into a parking spot.
 * Onboard esp32 controlling motors.
 * Birds eye view mounted webcam.
 * Visually defined parking space, ArUco markers on top of truck and trailer.
-* Encoders on steering and axle to send current steering angle and speed to esp.
+* Encoders on steering and axle.
 
 # CV
 
-Video from the aerial camera goes to laptop running python script with OpenCV. Script will find coordinate positions of the ArUco markers, calculate $(x, y, \theta_t, \theta_l)$ and stream to esp via usbc cable or UDP over wifi
+Video from the aerial camera goes to laptop running python script with OpenCV. Script will find coordinate positions of the ArUco markers and calculate $(x, y, \theta_t, \theta_l)$.
 
 # MPC
 
 ### Kinematic Model
 
+State:
+$$
+q=\begin{bmatrix}x & y & \theta_t & \theta_l & v & \phi\end{bmatrix}^\top,
+\quad
+u=\begin{bmatrix}a & \dot{\phi}\end{bmatrix}^\top
+$$
+Dynamics:
 $$
 \begin{aligned}
 \dot{x} &= v \cos(\theta_t) \\
@@ -33,14 +40,12 @@ $$
 
 ### Input
 
-* Discrete time kinematic model
-* Current state vector:
+* Current state:
   * Position $(x, y)$ of trucks rear axle
   * Orientation $(\theta_t, \theta_l)$
   * Velocity $(v)$
   * Steering angle $(\phi)$
-  * Desired position/orientation
-  * Location of obstacles (sides of parking spot)
+* Desired state
 
 ### Output
 
@@ -49,8 +54,8 @@ $$
 
 ### Cost function
 
-* Squared difference between current and desired state (in parking spot)
-* Control effort (encourage smooth control)
+* Squared difference between current and desired state at end of planning horizon
+* Control effort
 
 ### Constraints
 
@@ -58,7 +63,7 @@ $$
 * Acceleration and steering rate limits
 * Velocity limit
 * Jackknife constraint
-* Obstacle avoidance (dont hit sides of parking spot)
+* Obstacle avoidance
 
 # PID Motor Control
 
@@ -77,3 +82,8 @@ PWM_output = Kp*e + Ki*∫e dt + Kd*de/dt
 error = φ_desired - φ_measured
 servo_PWM = Kp * error
 ```
+
+# Possible additions
+
+* Add constraints to not hit the sides of the parking spot
+* Run mpc on the esp instead of laptop
