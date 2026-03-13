@@ -3,7 +3,7 @@ import cv2
 
 MARKERS_DIR = Path(__file__).parent / "markers"
 
-from cv.config import (
+from vision.config import (
     ARUCO_DICT,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,

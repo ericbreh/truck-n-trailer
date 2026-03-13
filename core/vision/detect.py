@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 
-from cv.camera import open_configured_camera
-from cv.config import (
+from vision.camera import open_configured_camera
+from vision.config import (
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
     ARUCO_DICT,

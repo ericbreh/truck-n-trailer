@@ -1,0 +1,10 @@
+[project]
+name = "vision"
+version = "0.1.0"
+dependencies = [
+    "opencv-contrib-python",
+    "numpy"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

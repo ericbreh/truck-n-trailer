@@ -1,0 +1,11 @@
+[project]
+name = "control"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "pyomo",
+    "matplotlib"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

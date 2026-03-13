@@ -1,0 +1,15 @@
+[project]
+name = "core"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "vision",
+    "control"
+]
+
+[tool.uv.workspace]
+members = ["vision", "control"]
+
+[tool.uv.sources]
+vision = { workspace = true }
+control = { workspace = true }
