@@ -1,0 +1,25 @@
+#include "pid.h"
+#include <math.h>
+
+void pid_init(PidController *pid, float p, float i, float d) {
+  pid->kp = p;
+  pid->ki = i;
+  pid->kd = d;
+  pid->integral = 0.0f;
+  pid->prev_error = 0.0f;
+}
+
+int pid_compute(PidController *pid, float error, float dt) {
+  float p_out = pid->kp * error;
+
+  pid->integral += error * dt;
+  float i_out = pid->ki * pid->integral;
+
+  float derivative = dt > 0.0f ? (error - pid->prev_error) / dt : 0.0f;
+  float d_out = pid->kd * derivative;
+
+  pid->prev_error = error;
+
+  float output = p_out + i_out + d_out;
+  return (int)roundf(output);
+}
