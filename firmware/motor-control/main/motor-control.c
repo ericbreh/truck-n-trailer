@@ -1,5 +1,6 @@
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
@@ -99,14 +100,20 @@ void app_main(void) {
   init_hw(&pcnt_unit);
 
   int count = 0;
-  while (1) {
-    // printf("Moving Forward...\n");
-    // set_motor_speed(500);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
+  int prev_count = 0;
+  int64_t prev_time = esp_timer_get_time();
+  set_motor_speed(300);
 
+  while (1) {
     pcnt_unit_get_count(pcnt_unit, &count);
-    printf("Stop. Encoder: %d\n", count);
-    set_motor_speed(0);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    int64_t curr_time = esp_timer_get_time();
+    int delta = count - prev_count;
+    float dt = (curr_time - prev_time) / 1000000.0f;
+    float rpm = (delta / 910.0f) * (60.0f / dt);
+    printf("dt=%0.2f enc=%d delta=%d rpm=%0.2f\n", dt, count, delta, rpm);
+
+    prev_count = count;
+    prev_time = curr_time;
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
