@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 
 // ESP Pin Definitions
@@ -17,6 +18,7 @@
 #define LEDC_MODE LEDC_LOW_SPEED_MODE
 #define LEDC_DUTY_RES LEDC_TIMER_10_BIT
 #define LEDC_FREQUENCY 20000
+#define PWM_MAX_DUTY ((1 << LEDC_DUTY_RES) - 1)
 
 // Encoder Config
 #define PCNT_HIGH_LIMIT INT16_MAX
@@ -24,6 +26,16 @@
 #define PCNT_GLITCH_FILTER_NS 1000
 #define COUNTS_PER_OUTPUT_REV 910.0f
 #define SAMPLE_PERIOD_MS 100
+
+static inline int clamp_int(int value, int min_value, int max_value) {
+  if (value < min_value) {
+    return min_value;
+  }
+  if (value > max_value) {
+    return max_value;
+  }
+  return value;
+}
 
 void init_hw(pcnt_unit_handle_t *pcnt_unit) {
   // Setup PWM Timer
@@ -93,6 +105,8 @@ void init_hw(pcnt_unit_handle_t *pcnt_unit) {
 }
 
 void set_motor_speed(int duty) {
+  duty = clamp_int(duty, -PWM_MAX_DUTY, PWM_MAX_DUTY);
+
   if (duty > 0) {
     ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, duty);
     ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_1, 0);
@@ -123,11 +137,18 @@ void pid_init(PidController *pid, float p, float i, float d) {
 int pid_compute(PidController *pid, float error, float dt) {
   float p_out = pid->kp * error;
 
-  pid->integral += error * dt;
-  float i_out = pid->ki * pid->integral;
-
-  float derivative = (error - pid->prev_error) / dt;
+  float derivative = dt > 0.0f ? (error - pid->prev_error) / dt : 0.0f;
   float d_out = pid->kd * derivative;
+
+  float integral_candidate = pid->integral + (error * dt);
+  float output_candidate = p_out + (pid->ki * integral_candidate) + d_out;
+
+  if (!((output_candidate > PWM_MAX_DUTY && error > 0.0f) ||
+        (output_candidate < -PWM_MAX_DUTY && error < 0.0f))) {
+    pid->integral = integral_candidate;
+  }
+
+  float i_out = pid->ki * pid->integral;
 
   pid->prev_error = error;
 
@@ -138,13 +159,11 @@ int pid_compute(PidController *pid, float error, float dt) {
 void app_main(void) {
   pcnt_unit_handle_t pcnt_unit = NULL;
   init_hw(&pcnt_unit);
-
   const TickType_t xFrequency = pdMS_TO_TICKS(SAMPLE_PERIOD_MS);
   TickType_t xLastWakeTime = xTaskGetTickCount();
-
-  int count = 0;
-  int prev_count = 0;
   int64_t prev_time = esp_timer_get_time();
+  int delta = 0;
+  pcnt_unit_clear_count(pcnt_unit);
 
   PidController drive_pid;
   pid_init(&drive_pid, 2.5f, 0.1f, 0.01f);
@@ -154,12 +173,11 @@ void app_main(void) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
     // Read encoders
-    pcnt_unit_get_count(pcnt_unit, &count);
+    pcnt_unit_get_count(pcnt_unit, &delta);
     int64_t curr_time = esp_timer_get_time();
-    int delta = count - prev_count;
+    pcnt_unit_clear_count(pcnt_unit);
     float dt = (curr_time - prev_time) / 1000000.0f;
     float rpm = (delta / COUNTS_PER_OUTPUT_REV) * (60.0f / dt);
-    prev_count = count;
     prev_time = curr_time;
 
     // Calculate PID
@@ -169,7 +187,7 @@ void app_main(void) {
     // Send motor control
     set_motor_speed(pwm);
 
-    printf("dt=%0.3f enc=%d delta=%d rpm=%0.2f pwm=%d\n", dt, count, delta, rpm,
-           pwm);
+    printf("dt=%0.3f delta=%d rpm=%0.2f error=%0.2f pwm=%d\n", dt, delta, rpm,
+           error, pwm);
   }
 }
