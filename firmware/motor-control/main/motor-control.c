@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 #include <stdio.h>
 
 // ESP Pin Definitions
@@ -103,6 +104,37 @@ void set_motor_speed(int duty) {
   ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_1);
 }
 
+typedef struct {
+  float kp;
+  float ki;
+  float kd;
+  float integral;
+  float prev_error;
+} PidController;
+
+void pid_init(PidController *pid, float p, float i, float d) {
+  pid->kp = p;
+  pid->ki = i;
+  pid->kd = d;
+  pid->integral = 0.0f;
+  pid->prev_error = 0.0f;
+}
+
+int pid_compute(PidController *pid, float error, float dt) {
+  float p_out = pid->kp * error;
+
+  pid->integral += error * dt;
+  float i_out = pid->ki * pid->integral;
+
+  float derivative = (error - pid->prev_error) / dt;
+  float d_out = pid->kd * derivative;
+
+  pid->prev_error = error;
+
+  float output = p_out + i_out + d_out;
+  return (int)roundf(output);
+}
+
 void app_main(void) {
   pcnt_unit_handle_t pcnt_unit = NULL;
   init_hw(&pcnt_unit);
@@ -114,19 +146,30 @@ void app_main(void) {
   int prev_count = 0;
   int64_t prev_time = esp_timer_get_time();
 
-  set_motor_speed(300);
+  PidController drive_pid;
+  pid_init(&drive_pid, 2.5f, 0.1f, 0.01f);
+  int target_rpm = 20;
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
+    // Read encoders
     pcnt_unit_get_count(pcnt_unit, &count);
     int64_t curr_time = esp_timer_get_time();
     int delta = count - prev_count;
     float dt = (curr_time - prev_time) / 1000000.0f;
     float rpm = (delta / COUNTS_PER_OUTPUT_REV) * (60.0f / dt);
-    printf("dt=%0.3f enc=%d delta=%d rpm=%0.2f\n", dt, count, delta, rpm);
-
     prev_count = count;
     prev_time = curr_time;
+
+    // Calculate PID
+    float error = target_rpm - rpm;
+    int pwm = pid_compute(&drive_pid, error, dt);
+
+    // Send motor control
+    set_motor_speed(pwm);
+
+    printf("dt=%0.3f enc=%d delta=%d rpm=%0.2f pwm=%d\n", dt, count, delta, rpm,
+           pwm);
   }
 }
