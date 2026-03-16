@@ -25,7 +25,14 @@
 #define PCNT_LOW_LIMIT INT16_MIN
 #define PCNT_GLITCH_FILTER_NS 1000
 #define COUNTS_PER_OUTPUT_REV 910.0f
-#define SAMPLE_PERIOD_MS 100
+#define CONTROL_PERIOD_MS 100
+
+// Control Config
+#define STICTION_FF_PWM 380
+#define DRIVE_KP 2.5f
+#define DRIVE_KI 0.1f
+#define DRIVE_KD 0.01f
+#define TARGET_RPM 20
 
 static inline int clamp_int(int value, int min_value, int max_value) {
   if (value < min_value) {
@@ -137,18 +144,11 @@ void pid_init(PidController *pid, float p, float i, float d) {
 int pid_compute(PidController *pid, float error, float dt) {
   float p_out = pid->kp * error;
 
+  pid->integral += error * dt;
+  float i_out = pid->ki * pid->integral;
+
   float derivative = dt > 0.0f ? (error - pid->prev_error) / dt : 0.0f;
   float d_out = pid->kd * derivative;
-
-  float integral_candidate = pid->integral + (error * dt);
-  float output_candidate = p_out + (pid->ki * integral_candidate) + d_out;
-
-  if (!((output_candidate > PWM_MAX_DUTY && error > 0.0f) ||
-        (output_candidate < -PWM_MAX_DUTY && error < 0.0f))) {
-    pid->integral = integral_candidate;
-  }
-
-  float i_out = pid->ki * pid->integral;
 
   pid->prev_error = error;
 
@@ -157,37 +157,48 @@ int pid_compute(PidController *pid, float error, float dt) {
 }
 
 void app_main(void) {
+  // Init hardware
   pcnt_unit_handle_t pcnt_unit = NULL;
   init_hw(&pcnt_unit);
-  const TickType_t xFrequency = pdMS_TO_TICKS(SAMPLE_PERIOD_MS);
+
+  // Timing
+  const TickType_t xFrequency = pdMS_TO_TICKS(CONTROL_PERIOD_MS);
   TickType_t xLastWakeTime = xTaskGetTickCount();
   int64_t prev_time = esp_timer_get_time();
-  int delta = 0;
-  pcnt_unit_clear_count(pcnt_unit);
 
+  // Encoder
+  int delta = 0;
+
+  // Controller
+  int target_rpm = TARGET_RPM;
+  int ff_pwm = target_rpm > 0 ? STICTION_FF_PWM : -STICTION_FF_PWM;
   PidController drive_pid;
-  pid_init(&drive_pid, 2.5f, 0.1f, 0.01f);
-  int target_rpm = 20;
+  pid_init(&drive_pid, DRIVE_KP, DRIVE_KI, DRIVE_KD);
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
-    // Read encoders
+    // Get delta
     pcnt_unit_get_count(pcnt_unit, &delta);
-    int64_t curr_time = esp_timer_get_time();
     pcnt_unit_clear_count(pcnt_unit);
+
+    // Get dt
+    int64_t curr_time = esp_timer_get_time();
     float dt = (curr_time - prev_time) / 1000000.0f;
-    float rpm = (delta / COUNTS_PER_OUTPUT_REV) * (60.0f / dt);
     prev_time = curr_time;
 
-    // Calculate PID
+    // Get rpm
+    float rpm = (delta / COUNTS_PER_OUTPUT_REV) * (60.0f / dt);
+
+    // Calculate output
     float error = target_rpm - rpm;
-    int pwm = pid_compute(&drive_pid, error, dt);
+    int pid_pwm = pid_compute(&drive_pid, error, dt);
+    int pwm = pid_pwm + ff_pwm;
 
     // Send motor control
     set_motor_speed(pwm);
 
-    printf("dt=%0.3f delta=%d rpm=%0.2f error=%0.2f pwm=%d\n", dt, delta, rpm,
-           error, pwm);
+    printf("dt=%0.3f delta=%d rpm=%0.2f error=%0.2f ff=%d pwm=%d\n", dt, delta,
+           rpm, error, ff_pwm, pwm);
   }
 }
