@@ -45,17 +45,36 @@ void init_hw(pcnt_unit_handle_t *pcnt_unit) {
   ledc_channel_config(&chan2);
 
   // Setup Encoder
-  pcnt_unit_config_t unit_config = {.high_limit = 20000, .low_limit = -20000};
+  pcnt_unit_config_t unit_config = {
+      .high_limit = 32767,
+      .low_limit = -32768,
+  };
   pcnt_new_unit(&unit_config, pcnt_unit);
+  pcnt_glitch_filter_config_t filter_config = {.max_glitch_ns = 1000};
+  pcnt_unit_set_glitch_filter(*pcnt_unit, &filter_config);
 
-  pcnt_chan_config_t chan_a_config = {.edge_gpio_num = ENCODER_A_PIN,
-                                      .level_gpio_num = ENCODER_B_PIN};
-  pcnt_channel_handle_t pcnt_chan = NULL;
-  pcnt_new_channel(*pcnt_unit, &chan_a_config, &pcnt_chan);
+  // Channel a
+  pcnt_chan_config_t chan_a_config = {
+      .edge_gpio_num = ENCODER_A_PIN,
+      .level_gpio_num = ENCODER_B_PIN,
+  };
+  pcnt_channel_handle_t pcnt_chan_a = NULL;
+  pcnt_new_channel(*pcnt_unit, &chan_a_config, &pcnt_chan_a);
+  pcnt_channel_set_edge_action(pcnt_chan_a, PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+                               PCNT_CHANNEL_EDGE_ACTION_DECREASE);
+  pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
-  pcnt_channel_set_edge_action(pcnt_chan, PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+  // Channel b
+  pcnt_chan_config_t chan_b_config = {
+      .edge_gpio_num = ENCODER_B_PIN,
+      .level_gpio_num = ENCODER_A_PIN,
+  };
+  pcnt_channel_handle_t pcnt_chan_b = NULL;
+  pcnt_new_channel(*pcnt_unit, &chan_b_config, &pcnt_chan_b);
+  pcnt_channel_set_edge_action(pcnt_chan_b, PCNT_CHANNEL_EDGE_ACTION_DECREASE,
                                PCNT_CHANNEL_EDGE_ACTION_INCREASE);
-  pcnt_channel_set_level_action(pcnt_chan, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+  pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
                                 PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
   pcnt_unit_enable(*pcnt_unit);
