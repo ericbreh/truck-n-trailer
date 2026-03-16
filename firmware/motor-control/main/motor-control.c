@@ -28,7 +28,7 @@
 #define CONTROL_PERIOD_MS 100
 
 // Control Config
-#define STICTION_FF_PWM 380
+#define STICTION_FF_PWM 400
 #define DRIVE_KP 2.5f
 #define DRIVE_KI 0.1f
 #define DRIVE_KD 0.01f
@@ -44,7 +44,7 @@ static inline int clamp_int(int value, int min_value, int max_value) {
   return value;
 }
 
-void init_hw(pcnt_unit_handle_t *pcnt_unit) {
+void init_pwm(void) {
   // Setup PWM Timer
   ledc_timer_config_t ledc_timer = {.speed_mode = LEDC_MODE,
                                     .timer_num = LEDC_TIMER,
@@ -71,7 +71,9 @@ void init_hw(pcnt_unit_handle_t *pcnt_unit) {
                                  .duty = 0,
                                  .hpoint = 0};
   ledc_channel_config(&chan2);
+}
 
+void init_pcnt(pcnt_unit_handle_t *pcnt_unit) {
   // Setup Encoder
   pcnt_unit_config_t unit_config = {
       .high_limit = PCNT_HIGH_LIMIT,
@@ -158,8 +160,9 @@ int pid_compute(PidController *pid, float error, float dt) {
 
 void app_main(void) {
   // Init hardware
+  init_pwm();
   pcnt_unit_handle_t pcnt_unit = NULL;
-  init_hw(&pcnt_unit);
+  init_pcnt(&pcnt_unit);
 
   // Timing
   const TickType_t xFrequency = pdMS_TO_TICKS(CONTROL_PERIOD_MS);
