@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import time
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
@@ -34,6 +35,7 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
     u_guess = np.zeros((2, cfg.N), dtype=float)
     q_hist = [q.copy()]
     u_hist: list[np.ndarray] = []
+    solve_times_s: list[float] = []
 
     for step in range(cfg.max_steps):
         pos_err = float(np.linalg.norm(q[:2] - cfg.q_des[:2]))
@@ -43,7 +45,9 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
         if pos_err <= cfg.target_tol and ang_err_t <= cfg.angle_tol and ang_err_l <= cfg.angle_tol:
             break
 
+        solve_t0 = time.perf_counter()
         u_opt = mpc.solve(q, u_guess)
+        solve_times_s.append(time.perf_counter() - solve_t0)
         if u_opt is None:
             print(f"Solver failed at step {step}")
             break
@@ -58,6 +62,18 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
         u_guess = np.hstack([u_opt[:, 1:], u_opt[:, -1:]])
 
         print(f"step {step:03d} | pos_err={pos_err: .3f} | ang_err_t={ang_err_t: .3f} | ang_err_l={ang_err_l: .3f}")
+
+    if solve_times_s:
+        t_ms = 1000.0 * np.array(solve_times_s, dtype=float)
+        overrun_pct = float(np.mean(np.array(solve_times_s) > cfg.dt) * 100.0)
+        print("MPC solve timing:")
+        print(f"  mean={float(np.mean(t_ms)):.1f} ms")
+        print(f"  median={float(np.median(t_ms)):.1f} ms")
+        print(f"  p95={float(np.percentile(t_ms, 95)):.1f} ms")
+        print(f"  p99={float(np.percentile(t_ms, 99)):.1f} ms")
+        print(f"  max={float(np.max(t_ms)):.1f} ms")
+        print(f"  overruns(>dt={cfg.dt:.3f}s)={overrun_pct:.1f}%")
+        print(f"  effective_rate~{(1.0 / float(np.mean(np.array(solve_times_s)))):.2f} Hz")
 
     return np.array(q_hist), np.array(u_hist)
 

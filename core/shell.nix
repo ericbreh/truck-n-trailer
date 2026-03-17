@@ -5,6 +5,7 @@
         python3
         uv
         ipopt
+        python3Packages.pyqt6
       ];
 
       LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
