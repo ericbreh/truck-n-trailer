@@ -14,17 +14,17 @@ def wrap_angle(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
 
 
-def dynamics(q: np.ndarray, u: np.ndarray, L: float, d: float) -> np.ndarray:
-    x, y, theta_t, theta_l, v, phi = q
-    a, phi_dot = u
+def dynamics(q: np.ndarray, u: np.ndarray, d: float) -> np.ndarray:
+    x, y, theta_t, theta_l, v, omega = q
+    a, alpha = u
     return np.array(
         [
             v * math.cos(theta_t),
             v * math.sin(theta_t),
-            (v / L) * math.tan(phi),
+            omega,
             (v / d) * math.sin(theta_t - theta_l),
             a,
-            phi_dot,
+            alpha,
         ],
         dtype=float,
     )
@@ -53,7 +53,7 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
             break
 
         u0 = u_opt[:, 0]
-        q = q + cfg.dt * dynamics(q, u0, cfg.L, cfg.d)
+        q = q + cfg.dt * dynamics(q, u0, cfg.d)
         q[2] = wrap_angle(q[2])
         q[3] = wrap_angle(q[3])
 
@@ -132,7 +132,7 @@ def animate_result(q_hist: np.ndarray, cfg: MPCConfig) -> None:
 
 
 def main() -> None:
-    cfg = MPCConfig(q0=np.array([2, 4, 1.57, 1.57, 0, 0]), q_des=np.array([0, 0, 0, 0, 0, 0]))
+    cfg = MPCConfig(q0=np.array([2, 4, 1.57, 1.57, 0, 0]), q_des=np.array([0, 0, 0, 0, 0, 0]), max_steps=200, N=50)
     mpc = TruckTrailerMPC(cfg)
 
     q_hist, _u_hist = run_simulation(cfg, mpc)

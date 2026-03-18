@@ -22,22 +22,23 @@ class MPCConfig:
     # State and control bounds
     a_min: float = -1.5
     a_max: float = 1.5
-    phi_dot_min: float = -0.8
-    phi_dot_max: float = 0.8
+    alpha_min: float = -0.8
+    alpha_max: float = 0.8
     v_min: float = -2.0
     v_max: float = 2.0
-    phi_min: float = -0.6
-    phi_max: float = 0.6
-    max_jackknife_angle: float = math.pi / 2.0
+    omega_min: float = -0.6
+    omega_max: float = 0.6
+    max_jackknife_angle: float = math.pi / 4.0
 
     # Costs
     w_pos: float = 1.0
     w_theta_t: float = 10.0
     w_theta_l: float = 100.0
     w_v: float = 10.0
-    w_phi: float = 10.0
+    w_omega: float = 10.0
+    w_pos_stage: float = 0
     w_a: float = 0.1
-    w_phi_dot: float = 0.1
+    w_alpha: float = 0.1
 
     # Initial and desired states
     q0: np.ndarray = field(default_factory=lambda: np.array([2, 4, 1.57, 1.57, 0, 0]))
@@ -65,7 +66,7 @@ class TruckTrailerMPC:
 
         m.x = pyo.Var(m.S, m.T, domain=pyo.Reals)
         m.a = pyo.Var(m.K, bounds=(c.a_min, c.a_max))
-        m.phi_dot = pyo.Var(m.K, bounds=(c.phi_dot_min, c.phi_dot_max))
+        m.alpha = pyo.Var(m.K, bounds=(c.alpha_min, c.alpha_max))
 
         def dyn_rule(model: Any, s: int, k: int):
             if s == 0:
@@ -73,16 +74,16 @@ class TruckTrailerMPC:
             if s == 1:
                 return model.x[1, k + 1] == model.x[1, k] + c.dt * model.x[4, k] * pyo.sin(model.x[2, k])
             if s == 2:
-                return model.x[2, k + 1] == model.x[2, k] + c.dt * (model.x[4, k] / c.L) * pyo.tan(model.x[5, k])
+                return model.x[2, k + 1] == model.x[2, k] + c.dt * model.x[5, k]
             if s == 3:
                 return model.x[3, k + 1] == model.x[3, k] + c.dt * (model.x[4, k] / c.d) * pyo.sin(model.x[2, k] - model.x[3, k])
             if s == 4:
                 return model.x[4, k + 1] == model.x[4, k] + c.dt * model.a[k]
-            return model.x[5, k + 1] == model.x[5, k] + c.dt * model.phi_dot[k]
+            return model.x[5, k + 1] == model.x[5, k] + c.dt * model.alpha[k]
 
         m.dyn = pyo.Constraint(m.S, m.K, rule=dyn_rule)
         m.vel_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(c.v_min, model.x[4, t], c.v_max))
-        m.steer_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(c.phi_min, model.x[5, t], c.phi_max))
+        m.omega_bounds = pyo.Constraint(m.T, rule=lambda model, t: pyo.inequality(c.omega_min, model.x[5, t], c.omega_max))
         m.jackknife = pyo.Constraint(
             m.T,
             rule=lambda model, t: pyo.inequality(-c.max_jackknife_angle, model.x[2, t] - model.x[3, t], c.max_jackknife_angle),
@@ -94,9 +95,13 @@ class TruckTrailerMPC:
                 + c.w_theta_t * (model.x[2, c.N] - c.q_des[2]) ** 2
                 + c.w_theta_l * (model.x[3, c.N] - c.q_des[3]) ** 2
                 + c.w_v * (model.x[4, c.N] - c.q_des[4]) ** 2
-                + c.w_phi * (model.x[5, c.N] - c.q_des[5]) ** 2
+                + c.w_omega * (model.x[5, c.N] - c.q_des[5]) ** 2
             )
-            cost += sum(c.w_a * model.a[k] ** 2 + c.w_phi_dot * model.phi_dot[k] ** 2 for k in range(c.N))
+            cost += sum(
+                c.w_pos_stage * ((model.x[0, k] - c.q_des[0]) ** 2 + (model.x[1, k] - c.q_des[1]) ** 2)
+                for k in range(c.N)
+            )
+            cost += sum(c.w_a * model.a[k] ** 2 + c.w_alpha * model.alpha[k] ** 2 for k in range(c.N))
             return cost
 
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
@@ -106,14 +111,14 @@ class TruckTrailerMPC:
         m = self.model
         for k in range(u_guess.shape[1]):
             m.a[k].set_value(float(u_guess[0, k]))
-            m.phi_dot[k].set_value(float(u_guess[1, k]))
+            m.alpha[k].set_value(float(u_guess[1, k]))
 
     def _extract_u(self) -> np.ndarray:
         m = self.model
         u = np.zeros((2, self.cfg.N), dtype=float)
         for k in range(self.cfg.N):
             u[0, k] = pyo.value(m.a[k])
-            u[1, k] = pyo.value(m.phi_dot[k])
+            u[1, k] = pyo.value(m.alpha[k])
         return u
 
     def solve(self, q: np.ndarray, u_guess: np.ndarray) -> np.ndarray | None:
@@ -122,7 +127,7 @@ class TruckTrailerMPC:
             m.x[s, 0].fix(float(q[s]))
 
         u_guess[0, :] = np.clip(u_guess[0, :], self.cfg.a_min, self.cfg.a_max)
-        u_guess[1, :] = np.clip(u_guess[1, :], self.cfg.phi_dot_min, self.cfg.phi_dot_max)
+        u_guess[1, :] = np.clip(u_guess[1, :], self.cfg.alpha_min, self.cfg.alpha_max)
         self._set_guess(u_guess)
 
         try:
