@@ -4,10 +4,21 @@
 #include <stdint.h>
 
 // ESP Pin Definitions
-#define MOTOR_IN1_PIN 12
-#define MOTOR_IN2_PIN 13
-#define ENCODER_A_PIN 33
-#define ENCODER_B_PIN 27
+#define RIGHT_MOTOR_IN1_PIN 12
+#define RIGHT_MOTOR_IN2_PIN 13
+#define RIGHT_ENCODER_A_PIN 27
+#define RIGHT_ENCODER_B_PIN 33
+
+#define LEFT_MOTOR_IN1_PIN 14
+#define LEFT_MOTOR_IN2_PIN 15
+#define LEFT_ENCODER_A_PIN 32
+#define LEFT_ENCODER_B_PIN 20
+
+// Direction Polarity
+#define RIGHT_MOTOR_DIRECTION_SIGN -1
+#define LEFT_MOTOR_DIRECTION_SIGN -1
+#define RIGHT_ENCODER_DIRECTION_SIGN -1
+#define LEFT_ENCODER_DIRECTION_SIGN 1
 
 // PWM Config
 #define LEDC_TIMER LEDC_TIMER_0
@@ -21,11 +32,12 @@
 #define PCNT_LOW_LIMIT INT16_MIN
 #define PCNT_GLITCH_FILTER_NS 1000
 #define COUNTS_PER_OUTPUT_REV 910.0f
-#define CONTROL_PERIOD_MS 100
+#define CONTROL_PERIOD_MS 10
 
 // Control Config
 #define STICTION_FF_PWM 400
 #define DRIVE_KP 2.5f
 #define DRIVE_KI 0.1f
 #define DRIVE_KD 0.01f
-#define TARGET_RPM 20
+#define TARGET_RPM_R 40
+#define TARGET_RPM_L 40

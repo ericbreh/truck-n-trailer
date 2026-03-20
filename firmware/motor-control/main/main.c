@@ -11,8 +11,10 @@
 void app_main(void) {
   // Init hardware
   init_pwm();
-  pcnt_unit_handle_t pcnt_unit = NULL;
-  init_encoder(&pcnt_unit);
+  pcnt_unit_handle_t left_encoder = NULL;
+  pcnt_unit_handle_t right_encoder = NULL;
+  init_encoder(MOTOR_SIDE_LEFT, &left_encoder);
+  init_encoder(MOTOR_SIDE_RIGHT, &right_encoder);
 
   // Timing
   const TickType_t xFrequency = pdMS_TO_TICKS(CONTROL_PERIOD_MS);
@@ -20,20 +22,25 @@ void app_main(void) {
   int64_t prev_time = esp_timer_get_time();
 
   // Encoder
-  int delta = 0;
+  int delta_l = 0;
+  int delta_r = 0;
 
   // Controller
-  const int target_rpm = TARGET_RPM;
-  const int ff_pwm = target_rpm > 0 ? STICTION_FF_PWM : -STICTION_FF_PWM;
-  PidController drive_pid;
-  pid_init(&drive_pid, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+  const int target_rpm_l = TARGET_RPM_L;
+  const int target_rpm_r = TARGET_RPM_R;
+  PidController drive_pid_l;
+  PidController drive_pid_r;
+  pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+  pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
     // Get delta
-    pcnt_unit_get_count(pcnt_unit, &delta);
-    pcnt_unit_clear_count(pcnt_unit);
+    pcnt_unit_get_count(left_encoder, &delta_l);
+    pcnt_unit_clear_count(left_encoder);
+    pcnt_unit_get_count(right_encoder, &delta_r);
+    pcnt_unit_clear_count(right_encoder);
 
     // Get dt
     int64_t curr_time = esp_timer_get_time();
@@ -41,17 +48,32 @@ void app_main(void) {
     prev_time = curr_time;
 
     // Get rpm
-    float rpm = (delta / COUNTS_PER_OUTPUT_REV) * (60.0f / dt);
+    float rpm_l =
+        (delta_l * LEFT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
+        (60.0f / dt);
+    float rpm_r =
+        (delta_r * RIGHT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
+        (60.0f / dt);
 
     // Calculate output
-    float error = target_rpm - rpm;
-    int pid_pwm = pid_compute(&drive_pid, error, dt);
-    int pwm = pid_pwm + ff_pwm;
+    float error_l = target_rpm_l - rpm_l;
+    float error_r = target_rpm_r - rpm_r;
+    int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt);
+    int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt);
+    int ff_pwm_l = target_rpm_l > 0   ? STICTION_FF_PWM
+                   : target_rpm_l < 0 ? -STICTION_FF_PWM
+                                      : 0;
+    int ff_pwm_r = target_rpm_r > 0   ? STICTION_FF_PWM
+                   : target_rpm_r < 0 ? -STICTION_FF_PWM
+                                      : 0;
+    int pwm_l = pid_pwm_l + ff_pwm_l;
+    int pwm_r = pid_pwm_r + ff_pwm_r;
 
     // Send motor control
-    set_motor_speed(pwm);
+    set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
+    set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
 
-    printf("dt=%0.3f delta=%d rpm=%0.2f error=%0.2f ff=%d pwm=%d\n", dt, delta,
-           rpm, error, ff_pwm, pwm);
+    printf("dt=%3.3f L(rpm=%7.2f pwm=%4d) R(rpm=%7.2f pwm=%4d)\n", dt, rpm_l,
+           pwm_l, rpm_r, pwm_r);
   }
 }
