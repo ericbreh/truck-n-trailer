@@ -39,5 +39,3 @@
 #define DRIVE_KP 1.5f
 #define DRIVE_KI 5.0f
 #define DRIVE_KD 0.1f
-#define TARGET_RPM_R 40
-#define TARGET_RPM_L 40
