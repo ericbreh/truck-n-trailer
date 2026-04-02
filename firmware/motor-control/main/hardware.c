@@ -1,16 +1,52 @@
 #include "hardware.h"
 #include "config.h"
 #include "driver/ledc.h"
+#include <stddef.h>
 
-static inline int clamp_int(int value, int min_value, int max_value) {
-  if (value < min_value) {
-    return min_value;
-  }
-  if (value > max_value) {
-    return max_value;
-  }
-  return value;
-}
+typedef struct {
+  int in1_pin;
+  int in2_pin;
+  ledc_channel_t in1_channel;
+  ledc_channel_t in2_channel;
+  int direction_sign;
+} MotorPwmConfig;
+
+typedef struct {
+  int encoder_a_pin;
+  int encoder_b_pin;
+} EncoderPinConfig;
+
+static const MotorPwmConfig motor_pwm_cfg[MOTOR_SIDE_COUNT] = {
+    [MOTOR_SIDE_LEFT] =
+        {
+            .in1_pin = LEFT_MOTOR_IN1_PIN,
+            .in2_pin = LEFT_MOTOR_IN2_PIN,
+            .in1_channel = LEDC_CHANNEL_0,
+            .in2_channel = LEDC_CHANNEL_1,
+            .direction_sign = LEFT_MOTOR_DIRECTION_SIGN,
+        },
+    [MOTOR_SIDE_RIGHT] =
+        {
+            .in1_pin = RIGHT_MOTOR_IN1_PIN,
+            .in2_pin = RIGHT_MOTOR_IN2_PIN,
+            .in1_channel = LEDC_CHANNEL_2,
+            .in2_channel = LEDC_CHANNEL_3,
+            .direction_sign = RIGHT_MOTOR_DIRECTION_SIGN,
+        },
+};
+
+static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
+    [MOTOR_SIDE_LEFT] =
+        {
+            .encoder_a_pin = LEFT_ENCODER_A_PIN,
+            .encoder_b_pin = LEFT_ENCODER_B_PIN,
+        },
+    [MOTOR_SIDE_RIGHT] =
+        {
+            .encoder_a_pin = RIGHT_ENCODER_A_PIN,
+            .encoder_b_pin = RIGHT_ENCODER_B_PIN,
+        },
+};
 
 void init_pwm(void) {
   ledc_timer_config_t ledc_timer = {.speed_mode = LEDC_MODE,
@@ -20,26 +56,34 @@ void init_pwm(void) {
                                     .clk_cfg = LEDC_AUTO_CLK};
   ledc_timer_config(&ledc_timer);
 
-  ledc_channel_config_t chan1 = {.speed_mode = LEDC_MODE,
-                                 .channel = LEDC_CHANNEL_0,
-                                 .timer_sel = LEDC_TIMER,
-                                 .intr_type = LEDC_INTR_DISABLE,
-                                 .gpio_num = MOTOR_IN1_PIN,
-                                 .duty = 0,
-                                 .hpoint = 0};
-  ledc_channel_config(&chan1);
+  for (int side = 0; side < MOTOR_SIDE_COUNT; side++) {
+    ledc_channel_config_t in1_cfg = {
+        .speed_mode = LEDC_MODE,
+        .channel = motor_pwm_cfg[side].in1_channel,
+        .timer_sel = LEDC_TIMER,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = motor_pwm_cfg[side].in1_pin,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    ledc_channel_config(&in1_cfg);
 
-  ledc_channel_config_t chan2 = {.speed_mode = LEDC_MODE,
-                                 .channel = LEDC_CHANNEL_1,
-                                 .timer_sel = LEDC_TIMER,
-                                 .intr_type = LEDC_INTR_DISABLE,
-                                 .gpio_num = MOTOR_IN2_PIN,
-                                 .duty = 0,
-                                 .hpoint = 0};
-  ledc_channel_config(&chan2);
+    ledc_channel_config_t in2_cfg = {
+        .speed_mode = LEDC_MODE,
+        .channel = motor_pwm_cfg[side].in2_channel,
+        .timer_sel = LEDC_TIMER,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = motor_pwm_cfg[side].in2_pin,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    ledc_channel_config(&in2_cfg);
+  }
 }
 
-void init_encoder(pcnt_unit_handle_t *pcnt_unit) {
+void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
+  const EncoderPinConfig encoder_cfg = encoder_pin_cfg[side];
+
   pcnt_unit_config_t unit_config = {
       .high_limit = PCNT_HIGH_LIMIT,
       .low_limit = PCNT_LOW_LIMIT,
@@ -51,8 +95,8 @@ void init_encoder(pcnt_unit_handle_t *pcnt_unit) {
   pcnt_unit_set_glitch_filter(*pcnt_unit, &filter_config);
 
   pcnt_chan_config_t chan_a_config = {
-      .edge_gpio_num = ENCODER_A_PIN,
-      .level_gpio_num = ENCODER_B_PIN,
+      .edge_gpio_num = encoder_cfg.encoder_a_pin,
+      .level_gpio_num = encoder_cfg.encoder_b_pin,
   };
   pcnt_channel_handle_t pcnt_chan_a = NULL;
   pcnt_new_channel(*pcnt_unit, &chan_a_config, &pcnt_chan_a);
@@ -62,8 +106,8 @@ void init_encoder(pcnt_unit_handle_t *pcnt_unit) {
                                 PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
   pcnt_chan_config_t chan_b_config = {
-      .edge_gpio_num = ENCODER_B_PIN,
-      .level_gpio_num = ENCODER_A_PIN,
+      .edge_gpio_num = encoder_cfg.encoder_b_pin,
+      .level_gpio_num = encoder_cfg.encoder_a_pin,
   };
   pcnt_channel_handle_t pcnt_chan_b = NULL;
   pcnt_new_channel(*pcnt_unit, &chan_b_config, &pcnt_chan_b);
@@ -77,16 +121,17 @@ void init_encoder(pcnt_unit_handle_t *pcnt_unit) {
   pcnt_unit_start(*pcnt_unit);
 }
 
-void set_motor_speed(int duty) {
-  duty = clamp_int(duty, -PWM_MAX_DUTY, PWM_MAX_DUTY);
+void set_motor_speed(MotorSide side, int duty) {
+  const MotorPwmConfig motor_cfg = motor_pwm_cfg[side];
+  duty *= motor_cfg.direction_sign;
 
   if (duty > 0) {
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, duty);
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_1, 0);
+    ledc_set_duty(LEDC_MODE, motor_cfg.in1_channel, duty);
+    ledc_set_duty(LEDC_MODE, motor_cfg.in2_channel, 0);
   } else {
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_0, 0);
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_1, -duty);
+    ledc_set_duty(LEDC_MODE, motor_cfg.in1_channel, 0);
+    ledc_set_duty(LEDC_MODE, motor_cfg.in2_channel, -duty);
   }
-  ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_0);
-  ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_1);
+  ledc_update_duty(LEDC_MODE, motor_cfg.in1_channel);
+  ledc_update_duty(LEDC_MODE, motor_cfg.in2_channel);
 }
