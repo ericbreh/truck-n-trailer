@@ -32,12 +32,12 @@
 #define PCNT_LOW_LIMIT INT16_MIN
 #define PCNT_GLITCH_FILTER_NS 1000
 #define COUNTS_PER_OUTPUT_REV 910.0f
-#define CONTROL_PERIOD_MS 10
+#define CONTROL_PERIOD_MS 100
 
 // Control Config
-#define STICTION_FF_PWM 400
-#define DRIVE_KP 2.5f
-#define DRIVE_KI 0.1f
-#define DRIVE_KD 0.01f
+#define STICTION_FF_PWM 250
+#define DRIVE_KP 1.5f
+#define DRIVE_KI 5.0f
+#define DRIVE_KD 0.1f
 #define TARGET_RPM_R 40
 #define TARGET_RPM_L 40

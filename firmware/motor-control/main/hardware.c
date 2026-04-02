@@ -48,16 +48,6 @@ static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
         },
 };
 
-static inline int clamp_int(int value, int min_value, int max_value) {
-  if (value < min_value) {
-    return min_value;
-  }
-  if (value > max_value) {
-    return max_value;
-  }
-  return value;
-}
-
 void init_pwm(void) {
   ledc_timer_config_t ledc_timer = {.speed_mode = LEDC_MODE,
                                     .timer_num = LEDC_TIMER,
@@ -134,7 +124,6 @@ void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
 void set_motor_speed(MotorSide side, int duty) {
   const MotorPwmConfig motor_cfg = motor_pwm_cfg[side];
   duty *= motor_cfg.direction_sign;
-  duty = clamp_int(duty, -PWM_MAX_DUTY, PWM_MAX_DUTY);
 
   if (duty > 0) {
     ledc_set_duty(LEDC_MODE, motor_cfg.in1_channel, duty);

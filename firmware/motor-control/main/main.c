@@ -58,8 +58,8 @@ void app_main(void) {
     // Calculate output
     float error_l = target_rpm_l - rpm_l;
     float error_r = target_rpm_r - rpm_r;
-    int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt);
-    int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt);
+    int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
+    int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
     int ff_pwm_l = target_rpm_l > 0   ? STICTION_FF_PWM
                    : target_rpm_l < 0 ? -STICTION_FF_PWM
                                       : 0;
