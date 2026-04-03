@@ -35,7 +35,7 @@
 #define CONTROL_PERIOD_MS 100
 
 // Control Config
-#define STICTION_FF_PWM 250
-#define DRIVE_KP 1.5f
-#define DRIVE_KI 5.0f
-#define DRIVE_KD 0.1f
+#define STICTION_FF_PWM 480
+#define DRIVE_KP 0.5f
+#define DRIVE_KI 0.5f
+#define DRIVE_KD 0.0f

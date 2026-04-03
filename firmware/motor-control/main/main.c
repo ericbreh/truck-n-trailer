@@ -38,6 +38,7 @@ void app_main(void) {
   const int profile_period_cycles = 10;
   const float test_rpm_low = 20.0f;
   const float test_rpm_high = -20.0f;
+  float prev_target = 0.0f;
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -51,6 +52,14 @@ void app_main(void) {
       target_rpm_l = test_rpm_high;
       target_rpm_r = test_rpm_high;
     }
+
+    // Reset PID integral when target changes direction
+    if ((prev_target > 0 && target_rpm_l < 0) ||
+        (prev_target < 0 && target_rpm_l > 0)) {
+      pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+      pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+    }
+    prev_target = target_rpm_l;
 
     // Get delta
     pcnt_unit_get_count(left_encoder, &delta_l);
