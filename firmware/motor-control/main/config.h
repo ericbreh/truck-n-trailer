@@ -35,7 +35,10 @@
 #define CONTROL_PERIOD_MS 100
 
 // Control Config
-#define STICTION_FF_PWM 480
+#define FORWARD_FF_PWM 480
+#define REVERSE_FF_PWM 480
+#define LEFT_MOTOR_GAIN 1.0f
+#define RIGHT_MOTOR_GAIN 0.9f
 #define DRIVE_KP 0.5f
 #define DRIVE_KI 0.5f
 #define DRIVE_KD 0.0f

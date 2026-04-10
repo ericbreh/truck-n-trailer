@@ -85,14 +85,14 @@ void app_main(void) {
     float error_r = target_rpm_r - rpm_r;
     int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
     int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
-    int ff_pwm_l = target_rpm_l > 0   ? STICTION_FF_PWM
-                   : target_rpm_l < 0 ? -STICTION_FF_PWM
-                                      : 0;
-    int ff_pwm_r = target_rpm_r > 0   ? STICTION_FF_PWM
-                   : target_rpm_r < 0 ? -STICTION_FF_PWM
-                                      : 0;
-    int pwm_l = pid_pwm_l + ff_pwm_l;
-    int pwm_r = pid_pwm_r + ff_pwm_r;
+    float ff_l = target_rpm_l > 0   ? FORWARD_FF_PWM * LEFT_MOTOR_GAIN
+                 : target_rpm_l < 0 ? -REVERSE_FF_PWM * LEFT_MOTOR_GAIN
+                                    : 0;
+    float ff_r = target_rpm_r > 0   ? FORWARD_FF_PWM * RIGHT_MOTOR_GAIN
+                 : target_rpm_r < 0 ? -REVERSE_FF_PWM * RIGHT_MOTOR_GAIN
+                                    : 0;
+    int pwm_l = pid_pwm_l + (int)(ff_l + 0.5f);
+    int pwm_r = pid_pwm_r + (int)(ff_r + 0.5f);
 
     // Send motor control
     set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
