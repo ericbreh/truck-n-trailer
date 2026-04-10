@@ -1,3 +1,4 @@
+#include "comm_uart.h"
 #include "config.h"
 #include "hardware.h"
 #include "pid.h"
@@ -5,12 +6,14 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 
 void app_main(void) {
   // Init hardware
   init_pwm();
+  comm_uart_init();
   pcnt_unit_handle_t left_encoder = NULL;
   pcnt_unit_handle_t right_encoder = NULL;
   init_encoder(MOTOR_SIDE_LEFT, &left_encoder);
@@ -26,40 +29,31 @@ void app_main(void) {
   int delta_r = 0;
 
   // Controller
-  float target_rpm_l = 0.0f;
-  float target_rpm_r = 0.0f;
+  float target_rpm_l = DEFAULT_TARGET_RPM;
+  float target_rpm_r = DEFAULT_TARGET_RPM;
   PidController drive_pid_l;
   PidController drive_pid_r;
   pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
   pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
 
-  // Test
-  int cycle_count = 0;
-  const int profile_period_cycles = 10;
-  const float test_rpm_low = 20.0f;
-  const float test_rpm_high = -20.0f;
-  float prev_target = 0.0f;
+  CommandPacket cmd;
+  cmd.valid = false;
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
-    // Test
-    cycle_count++;
-    if ((cycle_count / profile_period_cycles) % 2 == 0) {
-      target_rpm_l = test_rpm_low;
-      target_rpm_r = test_rpm_low;
+    // Read command from UART
+    if (comm_uart_read_packet(&cmd) == 0) {
+      target_rpm_l = cmd.target_rpm_l;
+      target_rpm_r = cmd.target_rpm_r;
     } else {
-      target_rpm_l = test_rpm_high;
-      target_rpm_r = test_rpm_high;
+      // Check for stale command timeout
+      int64_t age_ms = comm_uart_get_command_age_ms();
+      if (age_ms > COMMAND_TIMEOUT_MS) {
+        target_rpm_l = DEFAULT_TARGET_RPM;
+        target_rpm_r = DEFAULT_TARGET_RPM;
+      }
     }
-
-    // Reset PID integral when target changes direction
-    if ((prev_target > 0 && target_rpm_l < 0) ||
-        (prev_target < 0 && target_rpm_l > 0)) {
-      pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
-      pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
-    }
-    prev_target = target_rpm_l;
 
     // Get delta
     pcnt_unit_get_count(left_encoder, &delta_l);
@@ -98,8 +92,9 @@ void app_main(void) {
     set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
     set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
 
-    printf("dt=%3.3f L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f rpm=%7.2f "
-           "pwm=%4d)\n",
-           dt, target_rpm_l, rpm_l, pwm_l, target_rpm_r, rpm_r, pwm_r);
+    int64_t cmd_age = comm_uart_get_command_age_ms();
+    printf("dt=%3.3f age=%" PRId64 " L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
+           "rpm=%7.2f pwm=%4d)\n",
+           dt, cmd_age, target_rpm_l, rpm_l, pwm_l, target_rpm_r, rpm_r, pwm_r);
   }
 }

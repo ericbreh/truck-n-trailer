@@ -31,3 +31,10 @@ Run from the `core/` directory:
 ```sh
 python -m control.simulation
 ```
+
+### UART Sender
+
+```sh
+python -m control.uart_sender --port /dev/ttyACM0 --mode step --hz 10 --low 20 --high 60 --period-s 5
+python -m control.uart_sender --port /dev/ttyACM0 --mode constant --left 30 --right 30 --hz 10
+```

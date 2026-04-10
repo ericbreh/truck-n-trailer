@@ -4,7 +4,8 @@ version = "0.1.0"
 dependencies = [
     "numpy",
     "pyomo",
-    "matplotlib"
+    "matplotlib",
+    "pyserial"
 ]
 
 [tool.setuptools.packages.find]

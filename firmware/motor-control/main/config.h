@@ -42,3 +42,15 @@
 #define DRIVE_KP 0.5f
 #define DRIVE_KI 0.5f
 #define DRIVE_KD 0.0f
+
+// Runtime Command Config
+#define DEFAULT_TARGET_RPM 0.0f
+#define COMMAND_TIMEOUT_MS 500
+
+// UART Command Interface
+#define UART_BAUD_RATE 115200
+#define UART_TX_PIN 1
+#define UART_RX_PIN 3
+#define UART_RX_BUFFER_SIZE 256
+#define UART_TX_BUFFER_SIZE 256
+#define UART_COMMAND_MAX_LEN 64
