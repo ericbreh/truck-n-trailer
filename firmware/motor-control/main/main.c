@@ -26,15 +26,40 @@ void app_main(void) {
   int delta_r = 0;
 
   // Controller
-  const int target_rpm_l = TARGET_RPM_L;
-  const int target_rpm_r = TARGET_RPM_R;
+  float target_rpm_l = 0.0f;
+  float target_rpm_r = 0.0f;
   PidController drive_pid_l;
   PidController drive_pid_r;
   pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
   pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
 
+  // Test
+  int cycle_count = 0;
+  const int profile_period_cycles = 10;
+  const float test_rpm_low = 20.0f;
+  const float test_rpm_high = -20.0f;
+  float prev_target = 0.0f;
+
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
+
+    // Test
+    cycle_count++;
+    if ((cycle_count / profile_period_cycles) % 2 == 0) {
+      target_rpm_l = test_rpm_low;
+      target_rpm_r = test_rpm_low;
+    } else {
+      target_rpm_l = test_rpm_high;
+      target_rpm_r = test_rpm_high;
+    }
+
+    // Reset PID integral when target changes direction
+    if ((prev_target > 0 && target_rpm_l < 0) ||
+        (prev_target < 0 && target_rpm_l > 0)) {
+      pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+      pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+    }
+    prev_target = target_rpm_l;
 
     // Get delta
     pcnt_unit_get_count(left_encoder, &delta_l);
@@ -60,20 +85,21 @@ void app_main(void) {
     float error_r = target_rpm_r - rpm_r;
     int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
     int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
-    int ff_pwm_l = target_rpm_l > 0   ? STICTION_FF_PWM
-                   : target_rpm_l < 0 ? -STICTION_FF_PWM
-                                      : 0;
-    int ff_pwm_r = target_rpm_r > 0   ? STICTION_FF_PWM
-                   : target_rpm_r < 0 ? -STICTION_FF_PWM
-                                      : 0;
-    int pwm_l = pid_pwm_l + ff_pwm_l;
-    int pwm_r = pid_pwm_r + ff_pwm_r;
+    float ff_l = target_rpm_l > 0   ? FORWARD_FF_PWM * LEFT_MOTOR_GAIN
+                 : target_rpm_l < 0 ? -REVERSE_FF_PWM * LEFT_MOTOR_GAIN
+                                    : 0;
+    float ff_r = target_rpm_r > 0   ? FORWARD_FF_PWM * RIGHT_MOTOR_GAIN
+                 : target_rpm_r < 0 ? -REVERSE_FF_PWM * RIGHT_MOTOR_GAIN
+                                    : 0;
+    int pwm_l = pid_pwm_l + (int)(ff_l + 0.5f);
+    int pwm_r = pid_pwm_r + (int)(ff_r + 0.5f);
 
     // Send motor control
     set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
     set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
 
-    printf("dt=%3.3f L(rpm=%7.2f pwm=%4d) R(rpm=%7.2f pwm=%4d)\n", dt, rpm_l,
-           pwm_l, rpm_r, pwm_r);
+    printf("dt=%3.3f L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f rpm=%7.2f "
+           "pwm=%4d)\n",
+           dt, target_rpm_l, rpm_l, pwm_l, target_rpm_r, rpm_r, pwm_r);
   }
 }
