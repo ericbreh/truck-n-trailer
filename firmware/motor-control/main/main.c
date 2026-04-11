@@ -108,8 +108,7 @@ void app_main(void) {
     } else {
       float error_l = target_rpm_l - rpm_l;
       int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
-      float ff_l = sign_l > 0 ? FORWARD_FF_PWM * LEFT_MOTOR_GAIN
-                              : -REVERSE_FF_PWM * LEFT_MOTOR_GAIN;
+      float ff_l = sign_l * FF_STATIC_PWM;
       pwm_l = pid_pwm_l + (int)lroundf(ff_l);
     }
 
@@ -118,8 +117,7 @@ void app_main(void) {
     } else {
       float error_r = target_rpm_r - rpm_r;
       int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
-      float ff_r = sign_r > 0 ? FORWARD_FF_PWM * RIGHT_MOTOR_GAIN
-                              : -REVERSE_FF_PWM * RIGHT_MOTOR_GAIN;
+      float ff_r = sign_r * FF_STATIC_PWM;
       pwm_r = pid_pwm_r + (int)lroundf(ff_r);
     }
 
@@ -131,7 +129,7 @@ void app_main(void) {
     prev_target_rpm_r = target_rpm_r;
 
     int64_t cmd_age = comm_uart_get_command_age_ms();
-    printf("dt=%3.3f age=%" PRId64
+    printf("dt=%3.3f age=%2" PRId64
            " L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
            "rpm=%7.2f pwm=%4d)\n",
            dt, cmd_age, target_rpm_l, rpm_l, pwm_l, target_rpm_r, rpm_r, pwm_r);

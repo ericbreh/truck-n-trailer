@@ -35,12 +35,9 @@
 #define CONTROL_PERIOD_MS 10
 
 // Control Config
-#define FORWARD_FF_PWM 480
-#define REVERSE_FF_PWM 480
-#define LEFT_MOTOR_GAIN 1.0f
-#define RIGHT_MOTOR_GAIN 1.0f
-#define DRIVE_KP 0.5f
-#define DRIVE_KI 0.5f
+#define FF_STATIC_PWM 400
+#define DRIVE_KP 10.0f
+#define DRIVE_KI 10.0f
 #define DRIVE_KD 0.0f
 
 // Runtime Command Config

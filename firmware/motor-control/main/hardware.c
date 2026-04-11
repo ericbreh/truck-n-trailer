@@ -125,6 +125,12 @@ void set_motor_speed(MotorSide side, int duty) {
   const MotorPwmConfig motor_cfg = motor_pwm_cfg[side];
   duty *= motor_cfg.direction_sign;
 
+  if (duty > PWM_MAX_DUTY) {
+    duty = PWM_MAX_DUTY;
+  } else if (duty < -PWM_MAX_DUTY) {
+    duty = -PWM_MAX_DUTY;
+  }
+
   if (duty > 0) {
     ledc_set_duty(LEDC_MODE, motor_cfg.in1_channel, duty);
     ledc_set_duty(LEDC_MODE, motor_cfg.in2_channel, 0);
