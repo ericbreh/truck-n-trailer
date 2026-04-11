@@ -27,7 +27,6 @@ from .uart_sender import UartPacketSender, validate_sender_config
 
 DEFAULT_BAUD = 115200
 DEFAULT_HZ = 10.0
-DEFAULT_TTL_MS = 500
 
 
 def motion_targets(motion: str, base_rpm: float) -> tuple[float, float]:
@@ -178,8 +177,8 @@ class TruckControlGui(QWidget):
 
         try:
             port, _rpm = self._read_settings()
-            validate_sender_config(hz=DEFAULT_HZ, ttl_ms=DEFAULT_TTL_MS)
-            sender = UartPacketSender(port=port, baud=DEFAULT_BAUD, ttl_ms=DEFAULT_TTL_MS)
+            validate_sender_config(hz=DEFAULT_HZ)
+            sender = UartPacketSender(port=port, baud=DEFAULT_BAUD)
             sender.connect()
         except Exception:
             return

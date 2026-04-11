@@ -17,8 +17,6 @@
 static const char *TAG = "comm_uart";
 
 static int64_t last_cmd_rx_local_ms = -1;
-static uint16_t last_cmd_seq = 0;
-static bool has_last_seq = false;
 
 static char rx_line[UART_COMMAND_MAX_LEN];
 static size_t rx_line_len = 0;
@@ -55,28 +53,6 @@ void comm_uart_init(void) {
   ESP_LOGI(TAG, "UART initialized at %d baud", UART_BAUD_RATE);
 }
 
-static bool parse_u16_token(const char *token, uint16_t *out) {
-  char *end = NULL;
-  errno = 0;
-  unsigned long value = strtoul(token, &end, 10);
-  if (errno != 0 || end == token || *end != '\0' || value > UINT16_MAX) {
-    return false;
-  }
-  *out = (uint16_t)value;
-  return true;
-}
-
-static bool parse_i64_token(const char *token, int64_t *out) {
-  char *end = NULL;
-  errno = 0;
-  long long value = strtoll(token, &end, 10);
-  if (errno != 0 || end == token || *end != '\0') {
-    return false;
-  }
-  *out = (int64_t)value;
-  return true;
-}
-
 static bool parse_float_token(const char *token, float *out) {
   char *end = NULL;
   errno = 0;
@@ -97,14 +73,6 @@ static bool parse_crc_token(const char *token, uint16_t *out) {
   }
   *out = (uint16_t)value;
   return true;
-}
-
-static bool is_newer_seq(uint16_t seq) {
-  if (!has_last_seq) {
-    return true;
-  }
-  int16_t delta = (int16_t)(seq - last_cmd_seq);
-  return delta > 0;
 }
 
 static int parse_command_line(const char *line, CommandPacket *pkt) {
@@ -138,45 +106,24 @@ static int parse_command_line(const char *line, CommandPacket *pkt) {
 
   char *body = payload + (sizeof(CMD_START) - 1);
   char *saveptr = NULL;
-  char *seq_token = strtok_r(body, ",", &saveptr);
-  char *ts_token = strtok_r(NULL, ",", &saveptr);
-  char *rpm_l_token = strtok_r(NULL, ",", &saveptr);
+  char *rpm_l_token = strtok_r(body, ",", &saveptr);
   char *rpm_r_token = strtok_r(NULL, ",", &saveptr);
-  char *ttl_token = strtok_r(NULL, ",", &saveptr);
   char *extra_token = strtok_r(NULL, ",", &saveptr);
 
-  if (seq_token == NULL || ts_token == NULL || rpm_l_token == NULL ||
-      rpm_r_token == NULL || ttl_token == NULL || extra_token != NULL) {
+  if (rpm_l_token == NULL || rpm_r_token == NULL || extra_token != NULL) {
     return -1;
   }
 
-  uint16_t seq = 0;
-  uint16_t ttl_ms = 0;
-  int64_t timestamp_ms = 0;
   float rpm_l = 0.0f;
   float rpm_r = 0.0f;
 
-  if (!parse_u16_token(seq_token, &seq) ||
-      !parse_i64_token(ts_token, &timestamp_ms) ||
-      !parse_float_token(rpm_l_token, &rpm_l) ||
-      !parse_float_token(rpm_r_token, &rpm_r) ||
-      !parse_u16_token(ttl_token, &ttl_ms)) {
+  if (!parse_float_token(rpm_l_token, &rpm_l) ||
+      !parse_float_token(rpm_r_token, &rpm_r)) {
     return -1;
   }
 
-  if (!is_newer_seq(seq)) {
-    return -1;
-  }
-
-  pkt->seq = seq;
-  pkt->timestamp_ms = timestamp_ms;
   pkt->target_rpm_l = rpm_l;
   pkt->target_rpm_r = rpm_r;
-  pkt->ttl_ms = ttl_ms;
-  pkt->valid = true;
-
-  last_cmd_seq = seq;
-  has_last_seq = true;
   last_cmd_rx_local_ms = esp_timer_get_time() / 1000;
   return 0;
 }
@@ -226,8 +173,4 @@ int64_t comm_uart_get_command_age_ms(void) {
     return INT64_MAX;
   }
   return (esp_timer_get_time() / 1000) - last_cmd_rx_local_ms;
-}
-
-void comm_uart_reset_sequence_guard(void) {
-  has_last_seq = false;
 }

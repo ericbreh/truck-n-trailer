@@ -50,7 +50,6 @@ void app_main(void) {
   float prev_target_rpm_r = DEFAULT_TARGET_RPM;
 
   CommandPacket cmd;
-  cmd.valid = false;
 
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -65,7 +64,6 @@ void app_main(void) {
       if (age_ms > COMMAND_TIMEOUT_MS) {
         target_rpm_l = DEFAULT_TARGET_RPM;
         target_rpm_r = DEFAULT_TARGET_RPM;
-        comm_uart_reset_sequence_guard();
       }
     }
 

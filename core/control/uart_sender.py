@@ -24,22 +24,15 @@ def crc16_modbus(data: bytes) -> int:
     return crc & 0xFFFF
 
 
-def format_packet(seq: int, timestamp_ms: int, rpm_l: float, rpm_r: float, ttl_ms: int) -> str:
-    payload = f"CMD,{seq},{timestamp_ms},{rpm_l:.3f},{rpm_r:.3f},{ttl_ms}"
+def format_packet(rpm_l: float, rpm_r: float) -> str:
+    payload = f"CMD,{rpm_l:.3f},{rpm_r:.3f}"
     crc = crc16_modbus(payload.encode("ascii"))
     return f"{payload},{crc:04X}\n"
 
 
-def next_seq(seq: int) -> int:
-    value = (seq + 1) & 0xFFFF
-    return 1 if value == 0 else value
-
-
-def validate_sender_config(*, hz: float, ttl_ms: int, period_s: float | None = None, mode: str | None = None) -> None:
+def validate_sender_config(*, hz: float, period_s: float | None = None, mode: str | None = None) -> None:
     if hz <= 0:
         raise ValueError("hz must be > 0")
-    if ttl_ms <= 0 or ttl_ms > 65535:
-        raise ValueError("ttl_ms must be in 1..65535")
     if mode == "step" and (period_s is None or period_s <= 0):
         raise ValueError("period_s must be > 0 for step mode")
 
@@ -54,23 +47,19 @@ def open_serial(port: str, baud: int):
 class UartPacketSender:
     port: str
     baud: int = 115200
-    ttl_ms: int = 500
-    seq: int = 1
 
     def __post_init__(self):
         self.ser = None
-        validate_sender_config(hz=1.0, ttl_ms=self.ttl_ms)
+        validate_sender_config(hz=1.0)
 
     def connect(self) -> None:
         self.ser = open_serial(self.port, self.baud)
 
-    def send_targets(self, rpm_l: float, rpm_r: float, *, timestamp_ms: int | None = None) -> str:
+    def send_targets(self, rpm_l: float, rpm_r: float) -> str:
         if self.ser is None:
             raise RuntimeError("serial port is not connected")
-        now_ms = int(time.time() * 1000) if timestamp_ms is None else timestamp_ms
-        packet = format_packet(self.seq, now_ms, rpm_l, rpm_r, self.ttl_ms)
+        packet = format_packet(rpm_l, rpm_r)
         self.ser.write(packet.encode("ascii"))
-        self.seq = next_seq(self.seq)
         return packet
 
     def close(self) -> None:
@@ -96,7 +85,6 @@ def main() -> int:
     parser.add_argument("--port", required=True, help="Serial port (e.g. /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=115200, help="UART baud rate")
     parser.add_argument("--hz", type=float, default=10.0, help="Send rate in Hz")
-    parser.add_argument("--ttl-ms", type=int, default=500, help="Packet TTL in milliseconds")
     parser.add_argument("--mode", choices=["constant", "step"], default="step", help="Command profile mode")
     parser.add_argument("--left", type=float, default=30.0, help="Constant left RPM")
     parser.add_argument("--right", type=float, default=30.0, help="Constant right RPM")
@@ -107,7 +95,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        validate_sender_config(hz=args.hz, ttl_ms=args.ttl_ms, period_s=args.period_s, mode=args.mode)
+        validate_sender_config(hz=args.hz, period_s=args.period_s, mode=args.mode)
     except ValueError as exc:
         print(f"--{str(exc)}", file=sys.stderr)
         return 2
@@ -115,7 +103,8 @@ def main() -> int:
     period_s = 1.0 / args.hz
     start = time.monotonic()
     next_tick = start
-    sender = UartPacketSender(port=args.port, baud=args.baud, ttl_ms=args.ttl_ms)
+    sender = UartPacketSender(port=args.port, baud=args.baud)
+    packets_sent = 0
 
     try:
         sender.connect()
@@ -128,10 +117,10 @@ def main() -> int:
                     break
 
                 rpm_l, rpm_r = get_targets(args.mode, elapsed, args)
-                sent_seq = sender.seq
                 packet = sender.send_targets(rpm_l, rpm_r)
+                packets_sent += 1
 
-                if sent_seq % int(max(1, args.hz)) == 0:
+                if packets_sent % int(max(1, args.hz)) == 0:
                     print(packet.strip())
 
                 next_tick += period_s
