@@ -7,8 +7,19 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <inttypes.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+
+static int target_sign(float value) {
+  if (value > CMD_ZERO_RPM_EPS) {
+    return 1;
+  }
+  if (value < -CMD_ZERO_RPM_EPS) {
+    return -1;
+  }
+  return 0;
+}
 
 void app_main(void) {
   // Init hardware
@@ -35,6 +46,8 @@ void app_main(void) {
   PidController drive_pid_r;
   pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
   pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+  float prev_target_rpm_l = DEFAULT_TARGET_RPM;
+  float prev_target_rpm_r = DEFAULT_TARGET_RPM;
 
   CommandPacket cmd;
   cmd.valid = false;
@@ -52,6 +65,7 @@ void app_main(void) {
       if (age_ms > COMMAND_TIMEOUT_MS) {
         target_rpm_l = DEFAULT_TARGET_RPM;
         target_rpm_r = DEFAULT_TARGET_RPM;
+        comm_uart_reset_sequence_guard();
       }
     }
 
@@ -74,26 +88,51 @@ void app_main(void) {
         (delta_r * RIGHT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
         (60.0f / dt);
 
-    // Calculate output
-    float error_l = target_rpm_l - rpm_l;
-    float error_r = target_rpm_r - rpm_r;
-    int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
-    int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
-    float ff_l = target_rpm_l > 0   ? FORWARD_FF_PWM * LEFT_MOTOR_GAIN
-                 : target_rpm_l < 0 ? -REVERSE_FF_PWM * LEFT_MOTOR_GAIN
-                                    : 0;
-    float ff_r = target_rpm_r > 0   ? FORWARD_FF_PWM * RIGHT_MOTOR_GAIN
-                 : target_rpm_r < 0 ? -REVERSE_FF_PWM * RIGHT_MOTOR_GAIN
-                                    : 0;
-    int pwm_l = pid_pwm_l + (int)(ff_l + 0.5f);
-    int pwm_r = pid_pwm_r + (int)(ff_r + 0.5f);
+    int sign_l = target_sign(target_rpm_l);
+    int sign_r = target_sign(target_rpm_r);
+    int prev_sign_l = target_sign(prev_target_rpm_l);
+    int prev_sign_r = target_sign(prev_target_rpm_r);
+
+    if (sign_l != 0 && prev_sign_l != 0 && sign_l != prev_sign_l) {
+      pid_reset(&drive_pid_l);
+    }
+    if (sign_r != 0 && prev_sign_r != 0 && sign_r != prev_sign_r) {
+      pid_reset(&drive_pid_r);
+    }
+
+    int pwm_l = 0;
+    int pwm_r = 0;
+
+    if (sign_l == 0) {
+      pid_reset(&drive_pid_l);
+    } else {
+      float error_l = target_rpm_l - rpm_l;
+      int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
+      float ff_l = sign_l > 0 ? FORWARD_FF_PWM * LEFT_MOTOR_GAIN
+                              : -REVERSE_FF_PWM * LEFT_MOTOR_GAIN;
+      pwm_l = pid_pwm_l + (int)lroundf(ff_l);
+    }
+
+    if (sign_r == 0) {
+      pid_reset(&drive_pid_r);
+    } else {
+      float error_r = target_rpm_r - rpm_r;
+      int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
+      float ff_r = sign_r > 0 ? FORWARD_FF_PWM * RIGHT_MOTOR_GAIN
+                              : -REVERSE_FF_PWM * RIGHT_MOTOR_GAIN;
+      pwm_r = pid_pwm_r + (int)lroundf(ff_r);
+    }
 
     // Send motor control
     set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
     set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
 
+    prev_target_rpm_l = target_rpm_l;
+    prev_target_rpm_r = target_rpm_r;
+
     int64_t cmd_age = comm_uart_get_command_age_ms();
-    printf("dt=%3.3f age=%" PRId64 " L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
+    printf("dt=%3.3f age=%" PRId64
+           " L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
            "rpm=%7.2f pwm=%4d)\n",
            dt, cmd_age, target_rpm_l, rpm_l, pwm_l, target_rpm_r, rpm_r, pwm_r);
   }
