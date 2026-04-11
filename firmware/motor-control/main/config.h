@@ -32,20 +32,18 @@
 #define PCNT_LOW_LIMIT INT16_MIN
 #define PCNT_GLITCH_FILTER_NS 1000
 #define COUNTS_PER_OUTPUT_REV 910.0f
-#define CONTROL_PERIOD_MS 100
+#define CONTROL_PERIOD_MS 10
 
 // Control Config
-#define FORWARD_FF_PWM 480
-#define REVERSE_FF_PWM 480
-#define LEFT_MOTOR_GAIN 1.0f
-#define RIGHT_MOTOR_GAIN 0.9f
-#define DRIVE_KP 0.5f
-#define DRIVE_KI 0.5f
+#define FF_STATIC_PWM 400
+#define DRIVE_KP 10.0f
+#define DRIVE_KI 10.0f
 #define DRIVE_KD 0.0f
 
 // Runtime Command Config
 #define DEFAULT_TARGET_RPM 0.0f
-#define COMMAND_TIMEOUT_MS 500
+#define COMMAND_TIMEOUT_MS 100
+#define CMD_ZERO_RPM_EPS 0.01f
 
 // UART Command Interface
 #define UART_BAUD_RATE 115200

@@ -188,6 +188,8 @@ int comm_uart_read_packet(CommandPacket *pkt) {
     return -1;
   }
 
+  bool got_packet = false;
+
   for (int i = 0; i < len; i++) {
     char c = (char)buf[i];
 
@@ -195,8 +197,7 @@ int comm_uart_read_packet(CommandPacket *pkt) {
       if (!rx_overflow && rx_line_len > 0) {
         rx_line[rx_line_len] = '\0';
         if (parse_command_line(rx_line, pkt) == 0) {
-          rx_line_len = 0;
-          return 0;
+          got_packet = true;
         }
       }
       rx_line_len = 0;
@@ -217,7 +218,7 @@ int comm_uart_read_packet(CommandPacket *pkt) {
     rx_line[rx_line_len++] = c;
   }
 
-  return -1;
+  return got_packet ? 0 : -1;
 }
 
 int64_t comm_uart_get_command_age_ms(void) {
@@ -225,4 +226,8 @@ int64_t comm_uart_get_command_age_ms(void) {
     return INT64_MAX;
   }
   return (esp_timer_get_time() / 1000) - last_cmd_rx_local_ms;
+}
+
+void comm_uart_reset_sequence_guard(void) {
+  has_last_seq = false;
 }

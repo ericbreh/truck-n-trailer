@@ -9,6 +9,11 @@ void pid_init(PidController *pid, float p, float i, float d) {
   pid->prev_error = 0.0f;
 }
 
+void pid_reset(PidController *pid) {
+  pid->integral = 0.0f;
+  pid->prev_error = 0.0f;
+}
+
 int pid_compute(PidController *pid, float error, float dt, int output_limit) {
   float p_out = pid->kp * error;
 

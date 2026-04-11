@@ -37,4 +37,5 @@ python -m control.simulation
 ```sh
 python -m control.uart_sender --port /dev/ttyACM0 --mode step --hz 10 --low 20 --high 60 --period-s 5
 python -m control.uart_sender --port /dev/ttyACM0 --mode constant --left 30 --right 30 --hz 10
+python -m control.uart_gui --port /dev/ttyACM0 --rpm 30
 ```
