@@ -6,7 +6,7 @@ The vision system tracks the truck and trailer using an overhead camera. It outp
 
 ### Usage
 
-Run from the `core/` directory:
+Run all commands from the `core/` directory:
 
 1. **Generate markers**
 2. **Calibrate camera intrinsics** (one-time per camera)
@@ -22,20 +22,20 @@ python -m vision.detect
 
 ## Control
 
-The control system calculates and outputs steering and acceleration.
+The control system calculates and outputs steering and acceleration using MPC.
 
 ### Usage
-
-Run from the `core/` directory:
 
 ```sh
 python -m control.simulation
 ```
 
-### UART Sender
+## GUI
+
+The GUI provides a interface for sending commands via UART.
+
+### Usage
 
 ```sh
-python -m control.uart_sender --port /dev/ttyACM0 --mode step --hz 10 --low 20 --high 60 --period-s 5
-python -m control.uart_sender --port /dev/ttyACM0 --mode constant --left 30 --right 30 --hz 10
-python -m control.uart_gui --port /dev/ttyACM0 --rpm 30
+python -m gui.uart_gui --port /dev/ttyACM0 --rpm 30
 ```

@@ -4,12 +4,14 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "vision",
-    "control"
+    "control",
+    "gui"
 ]
 
 [tool.uv.workspace]
-members = ["vision", "control"]
+members = ["vision", "control", "gui"]
 
 [tool.uv.sources]
 vision = { workspace = true }
 control = { workspace = true }
+gui = { workspace = true }

@@ -1,10 +1,10 @@
 [project]
-name = "control"
+name = "gui"
 version = "0.1.0"
 dependencies = [
     "numpy",
-    "pyomo",
-    "matplotlib"
+    "pyserial",
+    "PyQt6"
 ]
 
 [tool.setuptools.packages.find]
