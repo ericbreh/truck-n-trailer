@@ -10,10 +10,10 @@ static const char *TAG = "killswitch";
 
 static void IRAM_ATTR on_kill_switch_isr(void *arg) {
   TaskHandle_t control_task_handle = (TaskHandle_t)arg;
-  BaseType_t high_task_wakeup = pdFALSE;
-  shared_latch_kill_from_isr(&high_task_wakeup);
-  vTaskNotifyGiveFromISR(control_task_handle, &high_task_wakeup);
-  if (high_task_wakeup == pdTRUE) {
+  BaseType_t higher_priority_task_woken = pdFALSE;
+  shared_latch_kill();
+  vTaskNotifyGiveFromISR(control_task_handle, &higher_priority_task_woken);
+  if (higher_priority_task_woken == pdTRUE) {
     portYIELD_FROM_ISR();
   }
 }
@@ -35,7 +35,8 @@ esp_err_t killswitch_init(TaskHandle_t control_task_handle) {
 
   err = gpio_install_isr_service(0);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGE(TAG, "failed to install gpio isr service (%s)", esp_err_to_name(err));
+    ESP_LOGE(TAG, "failed to install gpio isr service (%s)",
+             esp_err_to_name(err));
     return err;
   }
 

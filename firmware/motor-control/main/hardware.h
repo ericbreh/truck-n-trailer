@@ -3,8 +3,8 @@
 #include "driver/pulse_cnt.h"
 
 typedef enum {
-  MOTOR_SIDE_LEFT = 0,
-  MOTOR_SIDE_RIGHT = 1,
+  MOTOR_SIDE_L = 0,
+  MOTOR_SIDE_R = 1,
   MOTOR_SIDE_COUNT,
 } MotorSide;
 

@@ -17,34 +17,34 @@ typedef struct {
 } EncoderPinConfig;
 
 static const MotorPwmConfig motor_pwm_cfg[MOTOR_SIDE_COUNT] = {
-    [MOTOR_SIDE_LEFT] =
+    [MOTOR_SIDE_L] =
         {
-            .in1_pin = LEFT_MOTOR_IN1_PIN,
-            .in2_pin = LEFT_MOTOR_IN2_PIN,
+            .in1_pin = MOTOR_IN1_PIN_L,
+            .in2_pin = MOTOR_IN2_PIN_L,
             .in1_channel = LEDC_CHANNEL_0,
             .in2_channel = LEDC_CHANNEL_1,
-            .direction_sign = LEFT_MOTOR_DIRECTION_SIGN,
+            .direction_sign = MOTOR_DIRECTION_SIGN_L,
         },
-    [MOTOR_SIDE_RIGHT] =
+    [MOTOR_SIDE_R] =
         {
-            .in1_pin = RIGHT_MOTOR_IN1_PIN,
-            .in2_pin = RIGHT_MOTOR_IN2_PIN,
+            .in1_pin = MOTOR_IN1_PIN_R,
+            .in2_pin = MOTOR_IN2_PIN_R,
             .in1_channel = LEDC_CHANNEL_2,
             .in2_channel = LEDC_CHANNEL_3,
-            .direction_sign = RIGHT_MOTOR_DIRECTION_SIGN,
+            .direction_sign = MOTOR_DIRECTION_SIGN_R,
         },
 };
 
 static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
-    [MOTOR_SIDE_LEFT] =
+    [MOTOR_SIDE_L] =
         {
-            .encoder_a_pin = LEFT_ENCODER_A_PIN,
-            .encoder_b_pin = LEFT_ENCODER_B_PIN,
+            .encoder_a_pin = ENCODER_A_PIN_L,
+            .encoder_b_pin = ENCODER_B_PIN_L,
         },
-    [MOTOR_SIDE_RIGHT] =
+    [MOTOR_SIDE_R] =
         {
-            .encoder_a_pin = RIGHT_ENCODER_A_PIN,
-            .encoder_b_pin = RIGHT_ENCODER_B_PIN,
+            .encoder_a_pin = ENCODER_A_PIN_R,
+            .encoder_b_pin = ENCODER_B_PIN_R,
         },
 };
 

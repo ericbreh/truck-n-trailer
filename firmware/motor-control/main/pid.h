@@ -1,9 +1,9 @@
 #pragma once
 
 typedef struct {
-  float kp;
-  float ki;
-  float kd;
+  float p;
+  float i;
+  float d;
   float integral;
   float prev_error;
 } PidController;

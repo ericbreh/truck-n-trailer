@@ -7,12 +7,10 @@
 #include "freertos/task.h"
 
 typedef struct {
-  pcnt_unit_handle_t left_encoder;
-  pcnt_unit_handle_t right_encoder;
+  pcnt_unit_handle_t encoder_l;
+  pcnt_unit_handle_t encoder_r;
   gptimer_handle_t control_timer;
   TaskHandle_t task_handle;
 } ControlContext;
 
-esp_err_t control_create(ControlContext *ctx);
-esp_err_t control_start_timer(ControlContext *ctx);
 esp_err_t control_init(ControlContext *ctx);

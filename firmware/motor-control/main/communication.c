@@ -6,9 +6,9 @@
 #include "shared_state.h"
 
 #include <errno.h>
-#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -111,23 +111,23 @@ static int parse_command_line(const char *line, CommandPacket *pkt) {
   return 0;
 }
 
-static int process_pattern_event(void) {
+static void process_pattern_event(void) {
   int pattern_pos = uart_pattern_pop_pos(UART_NUM);
   if (pattern_pos < 0) {
-    return 0;
+    return;
   }
 
   size_t line_len = (size_t)pattern_pos + 1;
   if (line_len >= UART_COMMAND_MAX_LEN) {
     uint8_t discard[UART_COMMAND_MAX_LEN];
     uart_read_bytes(UART_NUM, discard, line_len, pdMS_TO_TICKS(0));
-    return 0;
+    return;
   }
 
   char line[UART_COMMAND_MAX_LEN];
   int line_read = uart_read_bytes(UART_NUM, line, line_len, pdMS_TO_TICKS(0));
   if (line_read <= 0) {
-    return 0;
+    return;
   }
 
   size_t logical_len = (size_t)line_read;
@@ -142,29 +142,28 @@ static int process_pattern_event(void) {
     shared_set_target_rpm(pkt.target_rpm_l, pkt.target_rpm_r);
     shared_mark_command_received();
   }
-
-  return 0;
 }
 
-static int process_next_uart_event(TickType_t wait_ticks) {
+static void process_next_uart_event(TickType_t wait_ticks) {
   uart_event_t event;
   if (xQueueReceive(uart_event_queue, &event, wait_ticks) != pdTRUE) {
-    return -1;
+    return;
   }
 
   switch (event.type) {
   case UART_PATTERN_DET:
-    return process_pattern_event();
+    process_pattern_event();
+    break;
   case UART_DATA:
-    return 0;
+    break;
   case UART_FIFO_OVF:
   case UART_BUFFER_FULL:
     ESP_LOGW(TAG, "UART overflow, flushing input");
     ESP_ERROR_CHECK(uart_flush_input(UART_NUM));
     xQueueReset(uart_event_queue);
-    return 0;
+    break;
   default:
-    return 0;
+    break;
   }
 }
 
@@ -190,7 +189,8 @@ esp_err_t communication_init(void) {
   ESP_ERROR_CHECK(uart_driver_install(UART_NUM, UART_RX_BUFFER_SIZE,
                                       UART_TX_BUFFER_SIZE, UART_EVENT_QUEUE_LEN,
                                       &uart_event_queue, 0));
-  ESP_ERROR_CHECK(uart_enable_pattern_det_baud_intr(UART_NUM, '\n', 1, 9, 0, 0));
+  ESP_ERROR_CHECK(
+      uart_enable_pattern_det_baud_intr(UART_NUM, '\n', 1, 9, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(UART_NUM, UART_EVENT_QUEUE_LEN));
 
   TaskHandle_t task_handle = NULL;

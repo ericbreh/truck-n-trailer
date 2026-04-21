@@ -23,15 +23,15 @@ static int target_sign(float value) {
   return 0;
 }
 
-static bool IRAM_ATTR on_control_timer_alarm(gptimer_handle_t timer,
-                                             const gptimer_alarm_event_data_t *edata,
-                                             void *user_ctx) {
+static bool IRAM_ATTR on_control_timer_alarm(
+    gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata,
+    void *user_ctx) {
   (void)timer;
   (void)edata;
   TaskHandle_t control_task_handle = (TaskHandle_t)user_ctx;
-  BaseType_t high_task_wakeup = pdFALSE;
-  vTaskNotifyGiveFromISR(control_task_handle, &high_task_wakeup);
-  return high_task_wakeup == pdTRUE;
+  BaseType_t higher_priority_task_woken = pdFALSE;
+  vTaskNotifyGiveFromISR(control_task_handle, &higher_priority_task_woken);
+  return higher_priority_task_woken == pdTRUE;
 }
 
 static void control_task_entry(void *arg) {
@@ -56,8 +56,8 @@ static void control_task_entry(void *arg) {
         pid_reset(&drive_pid_r);
         in_kill_state = true;
       }
-      set_motor_speed(MOTOR_SIDE_LEFT, 0);
-      set_motor_speed(MOTOR_SIDE_RIGHT, 0);
+      set_motor_speed(MOTOR_SIDE_L, 0);
+      set_motor_speed(MOTOR_SIDE_R, 0);
       continue;
     }
 
@@ -73,17 +73,15 @@ static void control_task_entry(void *arg) {
 
     int delta_l = 0;
     int delta_r = 0;
-    pcnt_unit_get_count(ctx->left_encoder, &delta_l);
-    pcnt_unit_clear_count(ctx->left_encoder);
-    pcnt_unit_get_count(ctx->right_encoder, &delta_r);
-    pcnt_unit_clear_count(ctx->right_encoder);
+    pcnt_unit_get_count(ctx->encoder_l, &delta_l);
+    pcnt_unit_clear_count(ctx->encoder_l);
+    pcnt_unit_get_count(ctx->encoder_r, &delta_r);
+    pcnt_unit_clear_count(ctx->encoder_r);
 
-    float rpm_l =
-        (delta_l * LEFT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
-        (60.0f / dt);
-    float rpm_r =
-        (delta_r * RIGHT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
-        (60.0f / dt);
+    float rpm_l = (delta_l * ENCODER_DIRECTION_SIGN_L / COUNTS_PER_OUTPUT_REV) *
+                  (60.0f / dt);
+    float rpm_r = (delta_r * ENCODER_DIRECTION_SIGN_R / COUNTS_PER_OUTPUT_REV) *
+                  (60.0f / dt);
 
     int sign_l = target_sign(target_rpm_l);
     int sign_r = target_sign(target_rpm_r);
@@ -118,31 +116,33 @@ static void control_task_entry(void *arg) {
       pwm_r = pid_pwm_r + (int)lroundf(ff_r);
     }
 
-    set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
-    set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
+    set_motor_speed(MOTOR_SIDE_L, pwm_l);
+    set_motor_speed(MOTOR_SIDE_R, pwm_r);
 
     prev_target_rpm_l = target_rpm_l;
     prev_target_rpm_r = target_rpm_r;
 
     printf("dt=%3.3f age=%lld L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
            "rpm=%7.2f pwm=%4d) kill=%d\n",
-           dt, (long long)shared_get_command_age_ms(), target_rpm_l, rpm_l, pwm_l,
-           target_rpm_r, rpm_r, pwm_r, shared_kill_is_latched() ? 1 : 0);
+           dt, (long long)shared_get_command_age_ms(), target_rpm_l, rpm_l,
+           pwm_l, target_rpm_r, rpm_r, pwm_r, shared_kill_is_latched() ? 1 : 0);
   }
 }
 
-esp_err_t control_create(ControlContext *ctx) {
+esp_err_t control_init(ControlContext *ctx) {
   if (xTaskCreate(control_task_entry, "control_task", CONTROL_TASK_STACK_WORDS,
                   ctx, CONTROL_TASK_PRIORITY, &ctx->task_handle) != pdPASS) {
     ESP_LOGE(TAG, "failed to create control task");
     return ESP_FAIL;
   }
 
-  return ESP_OK;
-}
+  init_encoder(MOTOR_SIDE_L, &ctx->encoder_l);
+  init_encoder(MOTOR_SIDE_R, &ctx->encoder_r);
 
-esp_err_t control_start_timer(ControlContext *ctx) {
-  esp_err_t err;
+  esp_err_t err = killswitch_init(ctx->task_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
 
   gptimer_config_t timer_cfg = {
       .clk_src = GPTIMER_CLK_SRC_DEFAULT,
@@ -161,7 +161,8 @@ esp_err_t control_start_timer(ControlContext *ctx) {
   err = gptimer_register_event_callbacks(ctx->control_timer, &callbacks,
                                          ctx->task_handle);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "failed to register timer callback (%s)", esp_err_to_name(err));
+    ESP_LOGE(TAG, "failed to register timer callback (%s)",
+             esp_err_to_name(err));
     return err;
   }
 
@@ -189,21 +190,4 @@ esp_err_t control_start_timer(ControlContext *ctx) {
   }
 
   return ESP_OK;
-}
-
-esp_err_t control_init(ControlContext *ctx) {
-  esp_err_t err = control_create(ctx);
-  if (err != ESP_OK) {
-    return err;
-  }
-
-  init_encoder(MOTOR_SIDE_LEFT, &ctx->left_encoder);
-  init_encoder(MOTOR_SIDE_RIGHT, &ctx->right_encoder);
-
-  err = killswitch_init(ctx->task_handle);
-  if (err != ESP_OK) {
-    return err;
-  }
-
-  return control_start_timer(ctx);
 }

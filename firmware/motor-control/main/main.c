@@ -7,8 +7,8 @@
 static const char *TAG = "main";
 
 static ControlContext control_ctx = {
-    .left_encoder = NULL,
-    .right_encoder = NULL,
+    .encoder_l = NULL,
+    .encoder_r = NULL,
     .control_timer = NULL,
     .task_handle = NULL,
 };
@@ -29,5 +29,5 @@ void app_main(void) {
     return;
   }
 
-  ESP_LOGI(TAG, "System initialized with task-driven control architecture");
+  ESP_LOGI(TAG, "System initialized");
 }

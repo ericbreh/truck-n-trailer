@@ -1,36 +1,36 @@
 #include "shared_state.h"
 
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
-#include <limits.h>
 
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 
-static float target_rpm_left = 0.0f;
-static float target_rpm_right = 0.0f;
+static float target_rpm_l = 0.0f;
+static float target_rpm_r = 0.0f;
 static int64_t last_command_rx_ms = -1;
 static bool kill_latched = false;
 
 void shared_state_init(void) {
   taskENTER_CRITICAL(&state_lock);
-  target_rpm_left = 0.0f;
-  target_rpm_right = 0.0f;
+  target_rpm_l = 0.0f;
+  target_rpm_r = 0.0f;
   last_command_rx_ms = -1;
   kill_latched = false;
   taskEXIT_CRITICAL(&state_lock);
 }
 
-void shared_set_target_rpm(float left, float right) {
+void shared_set_target_rpm(float l, float r) {
   taskENTER_CRITICAL(&state_lock);
-  target_rpm_left = left;
-  target_rpm_right = right;
+  target_rpm_l = l;
+  target_rpm_r = r;
   taskEXIT_CRITICAL(&state_lock);
 }
 
-void shared_get_target_rpm(float *left, float *right) {
+void shared_get_target_rpm(float *l, float *r) {
   taskENTER_CRITICAL(&state_lock);
-  *left = target_rpm_left;
-  *right = target_rpm_right;
+  *l = target_rpm_l;
+  *r = target_rpm_r;
   taskEXIT_CRITICAL(&state_lock);
 }
 
@@ -61,8 +61,7 @@ bool shared_kill_is_latched(void) {
   return latched;
 }
 
-void shared_latch_kill_from_isr(BaseType_t *hp_woken) {
-  (void)hp_woken;
+void shared_latch_kill(void) {
   taskENTER_CRITICAL_ISR(&state_lock);
   kill_latched = true;
   taskEXIT_CRITICAL_ISR(&state_lock);
