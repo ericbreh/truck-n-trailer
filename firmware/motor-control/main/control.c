@@ -1,0 +1,209 @@
+#include "control.h"
+
+#include "config.h"
+#include "esp_attr.h"
+#include "esp_log.h"
+#include "hardware.h"
+#include "killswitch.h"
+#include "pid.h"
+#include "shared_state.h"
+
+#include <math.h>
+#include <stdio.h>
+
+static const char *TAG = "control";
+
+static int target_sign(float value) {
+  if (value > CMD_ZERO_RPM_EPS) {
+    return 1;
+  }
+  if (value < -CMD_ZERO_RPM_EPS) {
+    return -1;
+  }
+  return 0;
+}
+
+static bool IRAM_ATTR on_control_timer_alarm(gptimer_handle_t timer,
+                                             const gptimer_alarm_event_data_t *edata,
+                                             void *user_ctx) {
+  (void)timer;
+  (void)edata;
+  TaskHandle_t control_task_handle = (TaskHandle_t)user_ctx;
+  BaseType_t high_task_wakeup = pdFALSE;
+  vTaskNotifyGiveFromISR(control_task_handle, &high_task_wakeup);
+  return high_task_wakeup == pdTRUE;
+}
+
+static void control_task_entry(void *arg) {
+  ControlContext *ctx = (ControlContext *)arg;
+  const float dt = (float)CONTROL_PERIOD_MS / 1000.0f;
+
+  PidController drive_pid_l;
+  PidController drive_pid_r;
+  pid_init(&drive_pid_l, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+  pid_init(&drive_pid_r, DRIVE_KP, DRIVE_KI, DRIVE_KD);
+
+  float prev_target_rpm_l = DEFAULT_TARGET_RPM;
+  float prev_target_rpm_r = DEFAULT_TARGET_RPM;
+  bool in_kill_state = false;
+
+  while (1) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    if (shared_kill_is_latched()) {
+      if (!in_kill_state) {
+        pid_reset(&drive_pid_l);
+        pid_reset(&drive_pid_r);
+        in_kill_state = true;
+      }
+      set_motor_speed(MOTOR_SIDE_LEFT, 0);
+      set_motor_speed(MOTOR_SIDE_RIGHT, 0);
+      continue;
+    }
+
+    in_kill_state = false;
+
+    float target_rpm_l = DEFAULT_TARGET_RPM;
+    float target_rpm_r = DEFAULT_TARGET_RPM;
+    shared_get_target_rpm(&target_rpm_l, &target_rpm_r);
+    if (shared_get_command_age_ms() > COMMAND_TIMEOUT_MS) {
+      target_rpm_l = DEFAULT_TARGET_RPM;
+      target_rpm_r = DEFAULT_TARGET_RPM;
+    }
+
+    int delta_l = 0;
+    int delta_r = 0;
+    pcnt_unit_get_count(ctx->left_encoder, &delta_l);
+    pcnt_unit_clear_count(ctx->left_encoder);
+    pcnt_unit_get_count(ctx->right_encoder, &delta_r);
+    pcnt_unit_clear_count(ctx->right_encoder);
+
+    float rpm_l =
+        (delta_l * LEFT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
+        (60.0f / dt);
+    float rpm_r =
+        (delta_r * RIGHT_ENCODER_DIRECTION_SIGN / COUNTS_PER_OUTPUT_REV) *
+        (60.0f / dt);
+
+    int sign_l = target_sign(target_rpm_l);
+    int sign_r = target_sign(target_rpm_r);
+    int prev_sign_l = target_sign(prev_target_rpm_l);
+    int prev_sign_r = target_sign(prev_target_rpm_r);
+
+    if (sign_l != 0 && prev_sign_l != 0 && sign_l != prev_sign_l) {
+      pid_reset(&drive_pid_l);
+    }
+    if (sign_r != 0 && prev_sign_r != 0 && sign_r != prev_sign_r) {
+      pid_reset(&drive_pid_r);
+    }
+
+    int pwm_l = 0;
+    int pwm_r = 0;
+
+    if (sign_l == 0) {
+      pid_reset(&drive_pid_l);
+    } else {
+      float error_l = target_rpm_l - rpm_l;
+      int pid_pwm_l = pid_compute(&drive_pid_l, error_l, dt, PWM_MAX_DUTY);
+      float ff_l = sign_l * FF_STATIC_PWM;
+      pwm_l = pid_pwm_l + (int)lroundf(ff_l);
+    }
+
+    if (sign_r == 0) {
+      pid_reset(&drive_pid_r);
+    } else {
+      float error_r = target_rpm_r - rpm_r;
+      int pid_pwm_r = pid_compute(&drive_pid_r, error_r, dt, PWM_MAX_DUTY);
+      float ff_r = sign_r * FF_STATIC_PWM;
+      pwm_r = pid_pwm_r + (int)lroundf(ff_r);
+    }
+
+    set_motor_speed(MOTOR_SIDE_LEFT, pwm_l);
+    set_motor_speed(MOTOR_SIDE_RIGHT, pwm_r);
+
+    prev_target_rpm_l = target_rpm_l;
+    prev_target_rpm_r = target_rpm_r;
+
+    printf("dt=%3.3f age=%lld L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
+           "rpm=%7.2f pwm=%4d) kill=%d\n",
+           dt, (long long)shared_get_command_age_ms(), target_rpm_l, rpm_l, pwm_l,
+           target_rpm_r, rpm_r, pwm_r, shared_kill_is_latched() ? 1 : 0);
+  }
+}
+
+esp_err_t control_create(ControlContext *ctx) {
+  if (xTaskCreate(control_task_entry, "control_task", CONTROL_TASK_STACK_WORDS,
+                  ctx, CONTROL_TASK_PRIORITY, &ctx->task_handle) != pdPASS) {
+    ESP_LOGE(TAG, "failed to create control task");
+    return ESP_FAIL;
+  }
+
+  return ESP_OK;
+}
+
+esp_err_t control_start_timer(ControlContext *ctx) {
+  esp_err_t err;
+
+  gptimer_config_t timer_cfg = {
+      .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+      .direction = GPTIMER_COUNT_UP,
+      .resolution_hz = 1000000,
+  };
+  err = gptimer_new_timer(&timer_cfg, &ctx->control_timer);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "failed to create control timer (%s)", esp_err_to_name(err));
+    return err;
+  }
+
+  gptimer_event_callbacks_t callbacks = {
+      .on_alarm = on_control_timer_alarm,
+  };
+  err = gptimer_register_event_callbacks(ctx->control_timer, &callbacks,
+                                         ctx->task_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "failed to register timer callback (%s)", esp_err_to_name(err));
+    return err;
+  }
+
+  gptimer_alarm_config_t alarm_cfg = {
+      .alarm_count = CONTROL_PERIOD_MS * 1000ULL,
+      .reload_count = 0,
+      .flags = {.auto_reload_on_alarm = true},
+  };
+  err = gptimer_set_alarm_action(ctx->control_timer, &alarm_cfg);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "failed to set timer alarm (%s)", esp_err_to_name(err));
+    return err;
+  }
+
+  err = gptimer_enable(ctx->control_timer);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "failed to enable timer (%s)", esp_err_to_name(err));
+    return err;
+  }
+
+  err = gptimer_start(ctx->control_timer);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "failed to start timer (%s)", esp_err_to_name(err));
+    return err;
+  }
+
+  return ESP_OK;
+}
+
+esp_err_t control_init(ControlContext *ctx) {
+  esp_err_t err = control_create(ctx);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  init_encoder(MOTOR_SIDE_LEFT, &ctx->left_encoder);
+  init_encoder(MOTOR_SIDE_RIGHT, &ctx->right_encoder);
+
+  err = killswitch_init(ctx->task_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  return control_start_timer(ctx);
+}
