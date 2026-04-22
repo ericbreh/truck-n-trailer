@@ -19,6 +19,7 @@ static void IRAM_ATTR on_kill_switch_isr(void *arg) {
 }
 
 esp_err_t killswitch_init(TaskHandle_t control_task_handle) {
+  // Configure kill GPIO
   gpio_config_t io_cfg = {
       .pin_bit_mask = (1ULL << KILL_SWITCH_GPIO_PIN),
       .mode = GPIO_MODE_INPUT,
@@ -33,6 +34,7 @@ esp_err_t killswitch_init(TaskHandle_t control_task_handle) {
     return err;
   }
 
+  // Install GPIO ISR service
   err = gpio_install_isr_service(0);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     ESP_LOGE(TAG, "failed to install gpio isr service (%s)",
@@ -40,6 +42,7 @@ esp_err_t killswitch_init(TaskHandle_t control_task_handle) {
     return err;
   }
 
+  // Attach kill interrupt handler
   err = gpio_isr_handler_add(KILL_SWITCH_GPIO_PIN, on_kill_switch_isr,
                              control_task_handle);
   if (err != ESP_OK) {

@@ -50,6 +50,7 @@ static void control_task_entry(void *arg) {
   while (1) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
+    // Handle kill switch
     if (shared_kill_is_latched()) {
       if (!in_kill_state) {
         pid_reset(&drive_pid_l);
@@ -63,6 +64,7 @@ static void control_task_entry(void *arg) {
 
     in_kill_state = false;
 
+    // Get target RPM
     float target_rpm_l = DEFAULT_TARGET_RPM;
     float target_rpm_r = DEFAULT_TARGET_RPM;
     shared_get_target_rpm(&target_rpm_l, &target_rpm_r);
@@ -71,6 +73,7 @@ static void control_task_entry(void *arg) {
       target_rpm_r = DEFAULT_TARGET_RPM;
     }
 
+    // Sample encoders and convert counts to RPM
     int delta_l = 0;
     int delta_r = 0;
     pcnt_unit_get_count(ctx->encoder_l, &delta_l);
@@ -88,6 +91,7 @@ static void control_task_entry(void *arg) {
     int prev_sign_l = target_sign(prev_target_rpm_l);
     int prev_sign_r = target_sign(prev_target_rpm_r);
 
+    // Reset PID when crossing through zero
     if (sign_l != 0 && prev_sign_l != 0 && sign_l != prev_sign_l) {
       pid_reset(&drive_pid_l);
     }
@@ -98,6 +102,7 @@ static void control_task_entry(void *arg) {
     int pwm_l = 0;
     int pwm_r = 0;
 
+    // PID + feedforward per side
     if (sign_l == 0) {
       pid_reset(&drive_pid_l);
     } else {
@@ -107,6 +112,7 @@ static void control_task_entry(void *arg) {
       pwm_l = pid_pwm_l + (int)lroundf(ff_l);
     }
 
+    // Reset PID when target is zero
     if (sign_r == 0) {
       pid_reset(&drive_pid_r);
     } else {
@@ -116,6 +122,7 @@ static void control_task_entry(void *arg) {
       pwm_r = pid_pwm_r + (int)lroundf(ff_r);
     }
 
+    // Apply motor outputs
     set_motor_speed(MOTOR_SIDE_L, pwm_l);
     set_motor_speed(MOTOR_SIDE_R, pwm_r);
 
@@ -130,20 +137,24 @@ static void control_task_entry(void *arg) {
 }
 
 esp_err_t control_init(ControlContext *ctx) {
+  // Start control task
   if (xTaskCreate(control_task_entry, "control_task", CONTROL_TASK_STACK_WORDS,
                   ctx, CONTROL_TASK_PRIORITY, &ctx->task_handle) != pdPASS) {
     ESP_LOGE(TAG, "failed to create control task");
     return ESP_FAIL;
   }
 
+  // Init encoders
   init_encoder(MOTOR_SIDE_L, &ctx->encoder_l);
   init_encoder(MOTOR_SIDE_R, &ctx->encoder_r);
 
+  // Init killswitch
   esp_err_t err = killswitch_init(ctx->task_handle);
   if (err != ESP_OK) {
     return err;
   }
 
+  // Start timer
   gptimer_config_t timer_cfg = {
       .clk_src = GPTIMER_CLK_SRC_DEFAULT,
       .direction = GPTIMER_COUNT_UP,
@@ -155,6 +166,7 @@ esp_err_t control_init(ControlContext *ctx) {
     return err;
   }
 
+  // Register timer alarm callback
   gptimer_event_callbacks_t callbacks = {
       .on_alarm = on_control_timer_alarm,
   };
@@ -166,6 +178,7 @@ esp_err_t control_init(ControlContext *ctx) {
     return err;
   }
 
+  // Set periodic alarm
   gptimer_alarm_config_t alarm_cfg = {
       .alarm_count = CONTROL_PERIOD_MS * 1000ULL,
       .reload_count = 0,
@@ -177,6 +190,7 @@ esp_err_t control_init(ControlContext *ctx) {
     return err;
   }
 
+  // Enable and start timer
   err = gptimer_enable(ctx->control_timer);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "failed to enable timer (%s)", esp_err_to_name(err));

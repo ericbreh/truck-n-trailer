@@ -49,6 +49,7 @@ static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
 };
 
 void init_pwm(void) {
+  // Configure LEDC timer for motor PWM frequency
   ledc_timer_config_t ledc_timer = {.speed_mode = LEDC_MODE,
                                     .timer_num = LEDC_TIMER,
                                     .duty_resolution = LEDC_DUTY_RES,
@@ -56,6 +57,7 @@ void init_pwm(void) {
                                     .clk_cfg = LEDC_AUTO_CLK};
   ledc_timer_config(&ledc_timer);
 
+  // Configure IN1/IN2 channels per motor
   for (int side = 0; side < MOTOR_SIDE_COUNT; side++) {
     ledc_channel_config_t in1_cfg = {
         .speed_mode = LEDC_MODE,
@@ -84,6 +86,7 @@ void init_pwm(void) {
 void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
   const EncoderPinConfig encoder_cfg = encoder_pin_cfg[side];
 
+  // Create PCNT unit and glitch filter
   pcnt_unit_config_t unit_config = {
       .high_limit = PCNT_HIGH_LIMIT,
       .low_limit = PCNT_LOW_LIMIT,
@@ -94,6 +97,7 @@ void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
                                                    PCNT_GLITCH_FILTER_NS};
   pcnt_unit_set_glitch_filter(*pcnt_unit, &filter_config);
 
+  // Quadrature channel A (edge on A, level from B)
   pcnt_chan_config_t chan_a_config = {
       .edge_gpio_num = encoder_cfg.encoder_a_pin,
       .level_gpio_num = encoder_cfg.encoder_b_pin,
@@ -105,6 +109,7 @@ void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
   pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
                                 PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
+  // Quadrature channel B (edge on B, level from A)
   pcnt_chan_config_t chan_b_config = {
       .edge_gpio_num = encoder_cfg.encoder_b_pin,
       .level_gpio_num = encoder_cfg.encoder_a_pin,
@@ -116,6 +121,7 @@ void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
   pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
                                 PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
+  // Enable counter and start sampling
   pcnt_unit_enable(*pcnt_unit);
   pcnt_unit_clear_count(*pcnt_unit);
   pcnt_unit_start(*pcnt_unit);
@@ -123,6 +129,8 @@ void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
 
 void set_motor_speed(MotorSide side, int duty) {
   const MotorPwmConfig motor_cfg = motor_pwm_cfg[side];
+
+  // Apply direction sign and clamp duty
   duty *= motor_cfg.direction_sign;
 
   if (duty > PWM_MAX_DUTY) {
@@ -131,6 +139,7 @@ void set_motor_speed(MotorSide side, int duty) {
     duty = -PWM_MAX_DUTY;
   }
 
+  // PWM on IN1 for forward, IN2 for reverse
   if (duty > 0) {
     ledc_set_duty(LEDC_MODE, motor_cfg.in1_channel, duty);
     ledc_set_duty(LEDC_MODE, motor_cfg.in2_channel, 0);

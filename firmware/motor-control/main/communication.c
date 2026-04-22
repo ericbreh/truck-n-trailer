@@ -112,11 +112,13 @@ static int parse_command_line(const char *line, CommandPacket *pkt) {
 }
 
 static void process_pattern_event(void) {
+  // Get newline-terminated line length from pattern queue
   int pattern_pos = uart_pattern_pop_pos(UART_NUM);
   if (pattern_pos < 0) {
     return;
   }
 
+  // Discard oversize lines so UART RX stays in sync
   size_t line_len = (size_t)pattern_pos + 1;
   if (line_len >= UART_COMMAND_MAX_LEN) {
     uint8_t discard[UART_COMMAND_MAX_LEN];
@@ -124,12 +126,14 @@ static void process_pattern_event(void) {
     return;
   }
 
+  // Read full line into buffer
   char line[UART_COMMAND_MAX_LEN];
   int line_read = uart_read_bytes(UART_NUM, line, line_len, pdMS_TO_TICKS(0));
   if (line_read <= 0) {
     return;
   }
 
+  // Strip trailing CR/LF
   size_t logical_len = (size_t)line_read;
   while (logical_len > 0 &&
          (line[logical_len - 1] == '\n' || line[logical_len - 1] == '\r')) {
@@ -137,6 +141,7 @@ static void process_pattern_event(void) {
   }
   line[logical_len] = '\0';
 
+  // Update shared targets on valid parse
   CommandPacket pkt;
   if (logical_len > 0 && parse_command_line(line, &pkt) == 0) {
     shared_set_target_rpm(pkt.target_rpm_l, pkt.target_rpm_r);
@@ -150,6 +155,7 @@ static void process_next_uart_event(TickType_t wait_ticks) {
     return;
   }
 
+  // Dispatch by event type
   switch (event.type) {
   case UART_PATTERN_DET:
     process_pattern_event();
@@ -186,6 +192,8 @@ esp_err_t communication_init(void) {
   ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
   ESP_ERROR_CHECK(uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN,
                                UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+
+  // Install driver, event queue, and newline pattern detection
   ESP_ERROR_CHECK(uart_driver_install(UART_NUM, UART_RX_BUFFER_SIZE,
                                       UART_TX_BUFFER_SIZE, UART_EVENT_QUEUE_LEN,
                                       &uart_event_queue, 0));
@@ -193,6 +201,7 @@ esp_err_t communication_init(void) {
       uart_enable_pattern_det_baud_intr(UART_NUM, '\n', 1, 9, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(UART_NUM, UART_EVENT_QUEUE_LEN));
 
+  // Start communication task
   TaskHandle_t task_handle = NULL;
   if (xTaskCreate(communication_task_entry, "comm_task", COMM_TASK_STACK_WORDS,
                   NULL, COMM_TASK_PRIORITY, &task_handle) != pdPASS) {
