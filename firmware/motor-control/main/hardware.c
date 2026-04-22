@@ -84,7 +84,7 @@ static void IRAM_ATTR encoder_gpio_isr(void *arg) {
   e->last_state = new_s;
   if (step != 0) {
     // Atomic add allows ISR producer and task consumer to share state safely.
-    atomic_fetch_add_explicit(&e->pending, step, memory_order_relaxed);
+    atomic_fetch_add(&e->pending, step);
   }
 }
 
@@ -153,7 +153,7 @@ void init_encoder(MotorSide side) {
   const int a = gpio_get_level(st->pin_a);
   const int b = gpio_get_level(st->pin_b);
   st->last_state = (uint8_t)(((a & 1) << 1) | (b & 1));
-  atomic_store_explicit(&st->pending, 0, memory_order_release);
+  atomic_store(&st->pending, 0);
 
   // Count all A/B transitions by triggering on both rising and falling edges.
   ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_a, GPIO_INTR_ANYEDGE));
@@ -164,8 +164,7 @@ void init_encoder(MotorSide side) {
 
 int32_t encoder_consume_delta(MotorSide side) {
   // Atomically read-and-clear steps since previous control-loop cycle.
-  return atomic_exchange_explicit(&s_enc[side].pending, 0,
-                                  memory_order_acquire);
+  return atomic_exchange(&s_enc[side].pending, 0);
 }
 
 void set_motor_speed(MotorSide side, int duty) {
