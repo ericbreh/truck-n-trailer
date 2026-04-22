@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/pulse_cnt.h"
+#include <stdint.h>
 
 typedef enum {
   MOTOR_SIDE_L = 0,
@@ -9,5 +9,6 @@ typedef enum {
 } MotorSide;
 
 void init_pwm(void);
-void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit);
+void init_encoders(void);
+int32_t encoder_consume_delta(MotorSide side);
 void set_motor_speed(MotorSide side, int duty);

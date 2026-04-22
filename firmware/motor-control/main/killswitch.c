@@ -19,6 +19,8 @@ static void IRAM_ATTR on_kill_switch_isr(void *arg) {
 }
 
 esp_err_t killswitch_init(TaskHandle_t control_task_handle) {
+  gpio_reset_pin(KILL_SWITCH_GPIO_PIN);
+
   // Configure kill GPIO
   gpio_config_t io_cfg = {
       .pin_bit_mask = (1ULL << KILL_SWITCH_GPIO_PIN),
