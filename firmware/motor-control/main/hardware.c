@@ -98,9 +98,8 @@ static void IRAM_ATTR encoder_gpio_isr(void *arg) {
   const uint8_t index = (uint8_t)((e->last_state << 2) | new_state);
 
   const int8_t step = transition_table[index];
-  e->last_state = new_state;
-
   if (step != 0) {
+    e->last_state = new_state;
     atomic_fetch_add(&e->pending, step);
   }
 }
