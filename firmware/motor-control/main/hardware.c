@@ -1,6 +1,10 @@
 #include "hardware.h"
 #include "config.h"
+#include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_attr.h"
+#include "esp_err.h"
+#include <stdatomic.h>
 #include <stddef.h>
 
 typedef struct {
@@ -15,6 +19,16 @@ typedef struct {
   int encoder_a_pin;
   int encoder_b_pin;
 } EncoderPinConfig;
+
+typedef struct {
+  // Physical encoder GPIO pins for one motor side.
+  int pin_a;
+  int pin_b;
+  // Last sampled quadrature state, encoded as (A << 1) | B.
+  uint8_t last_state;
+  // Net encoder steps accumulated by ISR since last control-loop read.
+  _Atomic int32_t pending;
+} EncoderState;
 
 static const MotorPwmConfig motor_pwm_cfg[MOTOR_SIDE_COUNT] = {
     [MOTOR_SIDE_L] =
@@ -47,6 +61,32 @@ static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
             .encoder_b_pin = ENCODER_B_PIN_R,
         },
 };
+
+static EncoderState s_enc[MOTOR_SIDE_COUNT];
+
+// Quadrature transition table:
+// index = (old_state << 2) | new_state, where state is encoded as (A << 1) | B.
+// Valid single-step transitions produce +/-1; invalid/bounce transitions produce 0.
+static const int8_t s_quad_table[16] = {
+    0, +1, -1, 0, -1, 0, 0, +1, +1, 0, 0, -1, 0, -1, +1, 0,
+};
+
+static void IRAM_ATTR encoder_gpio_isr(void *arg) {
+  // ISR runs for either A or B edge and updates one side's pending count.
+  EncoderState *e = (EncoderState *)arg;
+  // Read both lines on every edge so we can decode direction from state changes.
+  const int a = gpio_get_level(e->pin_a);
+  const int b = gpio_get_level(e->pin_b);
+  const uint8_t new_s = (uint8_t)(((a & 1) << 1) | (b & 1));
+  // Transition key old->new selects signed step from the lookup table.
+  const uint8_t idx = (uint8_t)((e->last_state << 2) | new_s);
+  const int8_t step = s_quad_table[idx];
+  e->last_state = new_s;
+  if (step != 0) {
+    // Atomic add allows ISR producer and task consumer to share state safely.
+    atomic_fetch_add_explicit(&e->pending, step, memory_order_relaxed);
+  }
+}
 
 void init_pwm(void) {
   // Configure LEDC timer for motor PWM frequency
@@ -83,48 +123,49 @@ void init_pwm(void) {
   }
 }
 
-void init_encoder(MotorSide side, pcnt_unit_handle_t *pcnt_unit) {
-  const EncoderPinConfig encoder_cfg = encoder_pin_cfg[side];
+void init_encoder(MotorSide side) {
+  // Initialize GPIO + ISR-based quadrature decoding for one motor side.
+  const EncoderPinConfig *enc = &encoder_pin_cfg[side];
 
-  // Create PCNT unit and glitch filter
-  pcnt_unit_config_t unit_config = {
-      .high_limit = PCNT_HIGH_LIMIT,
-      .low_limit = PCNT_LOW_LIMIT,
+  // Shared GPIO ISR service may already exist (e.g. killswitch init).
+  esp_err_t err = gpio_install_isr_service(0);
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(err);
+  }
+
+  gpio_reset_pin(enc->encoder_a_pin);
+  gpio_reset_pin(enc->encoder_b_pin);
+
+  gpio_config_t io_cfg = {
+      .pin_bit_mask =
+          (1ULL << enc->encoder_a_pin) | (1ULL << enc->encoder_b_pin),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_DISABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
   };
-  pcnt_new_unit(&unit_config, pcnt_unit);
+  ESP_ERROR_CHECK(gpio_config(&io_cfg));
 
-  pcnt_glitch_filter_config_t filter_config = {.max_glitch_ns =
-                                                   PCNT_GLITCH_FILTER_NS};
-  pcnt_unit_set_glitch_filter(*pcnt_unit, &filter_config);
+  // Seed runtime state from current pin levels to avoid first-edge miscount.
+  EncoderState *st = &s_enc[side];
+  st->pin_a = enc->encoder_a_pin;
+  st->pin_b = enc->encoder_b_pin;
+  const int a = gpio_get_level(st->pin_a);
+  const int b = gpio_get_level(st->pin_b);
+  st->last_state = (uint8_t)(((a & 1) << 1) | (b & 1));
+  atomic_store_explicit(&st->pending, 0, memory_order_release);
 
-  // Quadrature channel A (edge on A, level from B)
-  pcnt_chan_config_t chan_a_config = {
-      .edge_gpio_num = encoder_cfg.encoder_a_pin,
-      .level_gpio_num = encoder_cfg.encoder_b_pin,
-  };
-  pcnt_channel_handle_t pcnt_chan_a = NULL;
-  pcnt_new_channel(*pcnt_unit, &chan_a_config, &pcnt_chan_a);
-  pcnt_channel_set_edge_action(pcnt_chan_a, PCNT_CHANNEL_EDGE_ACTION_INCREASE,
-                               PCNT_CHANNEL_EDGE_ACTION_DECREASE);
-  pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
-                                PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
+  // Count all A/B transitions by triggering on both rising and falling edges.
+  ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_a, GPIO_INTR_ANYEDGE));
+  ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_b, GPIO_INTR_ANYEDGE));
+  ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_a, encoder_gpio_isr, st));
+  ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_b, encoder_gpio_isr, st));
+}
 
-  // Quadrature channel B (edge on B, level from A)
-  pcnt_chan_config_t chan_b_config = {
-      .edge_gpio_num = encoder_cfg.encoder_b_pin,
-      .level_gpio_num = encoder_cfg.encoder_a_pin,
-  };
-  pcnt_channel_handle_t pcnt_chan_b = NULL;
-  pcnt_new_channel(*pcnt_unit, &chan_b_config, &pcnt_chan_b);
-  pcnt_channel_set_edge_action(pcnt_chan_b, PCNT_CHANNEL_EDGE_ACTION_DECREASE,
-                               PCNT_CHANNEL_EDGE_ACTION_INCREASE);
-  pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
-                                PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
-
-  // Enable counter and start sampling
-  pcnt_unit_enable(*pcnt_unit);
-  pcnt_unit_clear_count(*pcnt_unit);
-  pcnt_unit_start(*pcnt_unit);
+int32_t encoder_consume_delta(MotorSide side) {
+  // Atomically read-and-clear steps since previous control-loop cycle.
+  return atomic_exchange_explicit(&s_enc[side].pending, 0,
+                                  memory_order_acquire);
 }
 
 void set_motor_speed(MotorSide side, int duty) {

@@ -35,7 +35,7 @@ static bool IRAM_ATTR on_control_timer_alarm(
 }
 
 static void control_task_entry(void *arg) {
-  ControlContext *ctx = (ControlContext *)arg;
+  (void)arg;
   const float dt = (float)CONTROL_PERIOD_MS / 1000.0f;
 
   PidController drive_pid_l;
@@ -74,12 +74,8 @@ static void control_task_entry(void *arg) {
     }
 
     // Sample encoders and convert counts to RPM
-    int delta_l = 0;
-    int delta_r = 0;
-    pcnt_unit_get_count(ctx->encoder_l, &delta_l);
-    pcnt_unit_clear_count(ctx->encoder_l);
-    pcnt_unit_get_count(ctx->encoder_r, &delta_r);
-    pcnt_unit_clear_count(ctx->encoder_r);
+    int delta_l = (int)encoder_consume_delta(MOTOR_SIDE_L);
+    int delta_r = (int)encoder_consume_delta(MOTOR_SIDE_R);
 
     float rpm_l = (delta_l * ENCODER_DIRECTION_SIGN_L / COUNTS_PER_OUTPUT_REV) *
                   (60.0f / dt);
@@ -145,8 +141,8 @@ esp_err_t control_init(ControlContext *ctx) {
   }
 
   // Init encoders
-  init_encoder(MOTOR_SIDE_L, &ctx->encoder_l);
-  init_encoder(MOTOR_SIDE_R, &ctx->encoder_r);
+  init_encoder(MOTOR_SIDE_L);
+  init_encoder(MOTOR_SIDE_R);
 
   // Init killswitch
   esp_err_t err = killswitch_init(ctx->task_handle);

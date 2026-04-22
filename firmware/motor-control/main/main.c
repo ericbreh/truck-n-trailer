@@ -7,8 +7,6 @@
 static const char *TAG = "main";
 
 static ControlContext control_ctx = {
-    .encoder_l = NULL,
-    .encoder_r = NULL,
     .control_timer = NULL,
     .task_handle = NULL,
 };
