@@ -61,4 +61,4 @@
 #define UART_EVENT_QUEUE_LEN 16
 
 // Safety Interrupt Config
-#define KILL_SWITCH_GPIO_PIN 0
+#define KILL_SWITCH_GPIO_PIN 38
