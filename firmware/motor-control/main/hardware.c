@@ -21,12 +21,9 @@ typedef struct {
 } EncoderPinConfig;
 
 typedef struct {
-  // Physical encoder GPIO pins for one motor side.
   int pin_a;
   int pin_b;
-  // Last sampled quadrature state, encoded as (A << 1) | B.
   uint8_t last_state;
-  // Net encoder steps accumulated by ISR since last control-loop read.
   _Atomic int32_t pending;
 } EncoderState;
 
@@ -64,26 +61,46 @@ static const EncoderPinConfig encoder_pin_cfg[MOTOR_SIDE_COUNT] = {
 
 static EncoderState s_enc[MOTOR_SIDE_COUNT];
 
-// Quadrature transition table:
-// index = (old_state << 2) | new_state, where state is encoded as (A << 1) | B.
-// Valid single-step transitions produce +/-1; invalid/bounce transitions produce 0.
-static const int8_t s_quad_table[16] = {
+// ┌───────────┬───────────┬───────────┬───────────┬───────┬──────┐
+// │ old (A,B) │ old_state │ new (A,B) │ new_state │ index │ step │
+// ├───────────┼───────────┼───────────┼───────────┼───────┼──────┤
+// │ 00        │ 0         │ 00        │ 0         │ 0     │ 0    │
+// │ 00        │ 0         │ 01        │ 1         │ 1     │ +1   │
+// │ 00        │ 0         │ 10        │ 2         │ 2     │ -1   │
+// │ 00        │ 0         │ 11        │ 3         │ 3     │ 0    │
+// │ 01        │ 1         │ 00        │ 0         │ 4     │ -1   │
+// │ 01        │ 1         │ 01        │ 1         │ 5     │ 0    │
+// │ 01        │ 1         │ 10        │ 2         │ 6     │ 0    │
+// │ 01        │ 1         │ 11        │ 3         │ 7     │ +1   │
+// │ 10        │ 2         │ 00        │ 0         │ 8     │ +1   │
+// │ 10        │ 2         │ 01        │ 1         │ 9     │ 0    │
+// │ 10        │ 2         │ 10        │ 2         │ 10    │ 0    │
+// │ 10        │ 2         │ 11        │ 3         │ 11    │ -1   │
+// │ 11        │ 3         │ 00        │ 0         │ 12    │ 0    │
+// │ 11        │ 3         │ 01        │ 1         │ 13    │ -1   │
+// │ 11        │ 3         │ 10        │ 2         │ 14    │ +1   │
+// │ 11        │ 3         │ 11        │ 3         │ 15    │ 0    │
+// └───────────┴───────────┴───────────┴───────────┴───────┴──────┘
+static const int8_t transition_table[16] = {
     0, +1, -1, 0, -1, 0, 0, +1, +1, 0, 0, -1, 0, -1, +1, 0,
 };
 
 static void IRAM_ATTR encoder_gpio_isr(void *arg) {
-  // ISR runs for either A or B edge and updates one side's pending count.
   EncoderState *e = (EncoderState *)arg;
-  // Read both lines on every edge so we can decode direction from state changes.
+
   const int a = gpio_get_level(e->pin_a);
   const int b = gpio_get_level(e->pin_b);
-  const uint8_t new_s = (uint8_t)(((a & 1) << 1) | (b & 1));
-  // Transition key old->new selects signed step from the lookup table.
-  const uint8_t idx = (uint8_t)((e->last_state << 2) | new_s);
-  const int8_t step = s_quad_table[idx];
-  e->last_state = new_s;
+
+  // State = (A << 1) | B
+  const uint8_t new_state = (uint8_t)(((a & 1) << 1) | (b & 1));
+
+  // Index = (last_state << 2) | new_state
+  const uint8_t index = (uint8_t)((e->last_state << 2) | new_state);
+
+  const int8_t step = transition_table[index];
+  e->last_state = new_state;
+
   if (step != 0) {
-    // Atomic add allows ISR producer and task consumer to share state safely.
     atomic_fetch_add(&e->pending, step);
   }
 }
@@ -124,10 +141,9 @@ void init_pwm(void) {
 }
 
 void init_encoder(MotorSide side) {
-  // Initialize GPIO + ISR-based quadrature decoding for one motor side.
   const EncoderPinConfig *enc = &encoder_pin_cfg[side];
 
-  // Shared GPIO ISR service may already exist (e.g. killswitch init).
+  // Install GPIO ISR service
   esp_err_t err = gpio_install_isr_service(0);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     ESP_ERROR_CHECK(err);
@@ -136,6 +152,7 @@ void init_encoder(MotorSide side) {
   gpio_reset_pin(enc->encoder_a_pin);
   gpio_reset_pin(enc->encoder_b_pin);
 
+  // Configure GPIO
   gpio_config_t io_cfg = {
       .pin_bit_mask =
           (1ULL << enc->encoder_a_pin) | (1ULL << enc->encoder_b_pin),
@@ -146,7 +163,7 @@ void init_encoder(MotorSide side) {
   };
   ESP_ERROR_CHECK(gpio_config(&io_cfg));
 
-  // Seed runtime state from current pin levels to avoid first-edge miscount.
+  // Seed runtime state
   EncoderState *st = &s_enc[side];
   st->pin_a = enc->encoder_a_pin;
   st->pin_b = enc->encoder_b_pin;
@@ -155,7 +172,7 @@ void init_encoder(MotorSide side) {
   st->last_state = (uint8_t)(((a & 1) << 1) | (b & 1));
   atomic_store(&st->pending, 0);
 
-  // Count all A/B transitions by triggering on both rising and falling edges.
+  // Trigger on both rising and falling edges.
   ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_a, GPIO_INTR_ANYEDGE));
   ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_b, GPIO_INTR_ANYEDGE));
   ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_a, encoder_gpio_isr, st));
@@ -163,7 +180,6 @@ void init_encoder(MotorSide side) {
 }
 
 int32_t encoder_consume_delta(MotorSide side) {
-  // Atomically read-and-clear steps since previous control-loop cycle.
   return atomic_exchange(&s_enc[side].pending, 0);
 }
 
