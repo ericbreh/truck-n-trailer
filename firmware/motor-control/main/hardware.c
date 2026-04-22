@@ -139,48 +139,44 @@ void init_pwm(void) {
   }
 }
 
-static void init_encoder_side(MotorSide side) {
-  const EncoderPinConfig *enc = &encoder_pin_cfg[side];
-
+void init_encoders(void) {
   // Install GPIO ISR service
   esp_err_t err = gpio_install_isr_service(0);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     ESP_ERROR_CHECK(err);
   }
 
-  gpio_reset_pin(enc->encoder_a_pin);
-  gpio_reset_pin(enc->encoder_b_pin);
-
-  // Configure GPIO
-  gpio_config_t io_cfg = {
-      .pin_bit_mask =
-          (1ULL << enc->encoder_a_pin) | (1ULL << enc->encoder_b_pin),
-      .mode = GPIO_MODE_INPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE,
-  };
-  ESP_ERROR_CHECK(gpio_config(&io_cfg));
-
-  // Seed runtime state
-  EncoderState *st = &s_enc[side];
-  st->pin_a = enc->encoder_a_pin;
-  st->pin_b = enc->encoder_b_pin;
-  const int a = gpio_get_level(st->pin_a);
-  const int b = gpio_get_level(st->pin_b);
-  st->last_state = (uint8_t)(((a & 1) << 1) | (b & 1));
-  atomic_store(&st->pending, 0);
-
-  // Trigger on both rising and falling edges.
-  ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_a, GPIO_INTR_ANYEDGE));
-  ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_b, GPIO_INTR_ANYEDGE));
-  ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_a, encoder_gpio_isr, st));
-  ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_b, encoder_gpio_isr, st));
-}
-
-void init_encoders(void) {
   for (int side = 0; side < MOTOR_SIDE_COUNT; side++) {
-    init_encoder_side((MotorSide)side);
+    const EncoderPinConfig *enc = &encoder_pin_cfg[side];
+    EncoderState *st = &s_enc[side];
+
+    gpio_reset_pin(enc->encoder_a_pin);
+    gpio_reset_pin(enc->encoder_b_pin);
+
+    // Configure each side's A/B inputs
+    gpio_config_t io_cfg = {
+        .pin_bit_mask =
+            (1ULL << enc->encoder_a_pin) | (1ULL << enc->encoder_b_pin),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_cfg));
+
+    // Init runtime state from the current pin levels
+    st->pin_a = enc->encoder_a_pin;
+    st->pin_b = enc->encoder_b_pin;
+    const int a = gpio_get_level(st->pin_a);
+    const int b = gpio_get_level(st->pin_b);
+    st->last_state = (uint8_t)(((a & 1) << 1) | (b & 1));
+    atomic_store(&st->pending, 0);
+
+    // Trigger on both rising and falling edges
+    ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_a, GPIO_INTR_ANYEDGE));
+    ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_b, GPIO_INTR_ANYEDGE));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_a, encoder_gpio_isr, st));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_b, encoder_gpio_isr, st));
   }
 }
 
