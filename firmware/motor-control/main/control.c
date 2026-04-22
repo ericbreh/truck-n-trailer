@@ -140,10 +140,6 @@ esp_err_t control_init(ControlContext *ctx) {
     return ESP_FAIL;
   }
 
-  // Init encoders
-  init_encoder(MOTOR_SIDE_L);
-  init_encoder(MOTOR_SIDE_R);
-
   // Init killswitch
   esp_err_t err = killswitch_init(ctx->task_handle);
   if (err != ESP_OK) {

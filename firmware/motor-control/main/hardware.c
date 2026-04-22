@@ -140,7 +140,7 @@ void init_pwm(void) {
   }
 }
 
-void init_encoder(MotorSide side) {
+static void init_encoder_side(MotorSide side) {
   const EncoderPinConfig *enc = &encoder_pin_cfg[side];
 
   // Install GPIO ISR service
@@ -177,6 +177,12 @@ void init_encoder(MotorSide side) {
   ESP_ERROR_CHECK(gpio_set_intr_type(st->pin_b, GPIO_INTR_ANYEDGE));
   ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_a, encoder_gpio_isr, st));
   ESP_ERROR_CHECK(gpio_isr_handler_add(st->pin_b, encoder_gpio_isr, st));
+}
+
+void init_encoders(void) {
+  for (int side = 0; side < MOTOR_SIDE_COUNT; side++) {
+    init_encoder_side((MotorSide)side);
+  }
 }
 
 int32_t encoder_consume_delta(MotorSide side) {

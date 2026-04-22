@@ -9,6 +9,6 @@ typedef enum {
 } MotorSide;
 
 void init_pwm(void);
-void init_encoder(MotorSide side);
+void init_encoders(void);
 int32_t encoder_consume_delta(MotorSide side);
 void set_motor_speed(MotorSide side, int duty);

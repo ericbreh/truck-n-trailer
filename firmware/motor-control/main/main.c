@@ -14,6 +14,7 @@ static ControlContext control_ctx = {
 void app_main(void) {
   shared_state_init();
   init_pwm();
+  init_encoders();
 
   esp_err_t err = control_init(&control_ctx);
   if (err != ESP_OK) {
