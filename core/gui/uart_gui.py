@@ -47,6 +47,9 @@ class TruckControlGui(QWidget):
         self.setWindowTitle("Truck UART Teleop")
         self.resize(440, 340)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        # Apply the Blue Theme
+        self.setStyleSheet(self._get_blue_stylesheet())
 
         self.sender: UartPacketSender | None = None
         self.current_motion = "STOP"
@@ -81,6 +84,70 @@ class TruckControlGui(QWidget):
         if args.port:
             self._select_port(args.port)
         self._set_connected(False)
+
+    def _get_blue_stylesheet(self) -> str:
+        """Returns the CSS logic for the blue theme."""
+        return """
+            QWidget {
+                background-color: #121826;
+                color: #e0e6ed;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 13px;
+            }
+            QGroupBox {
+                border: 2px solid #1e293b;
+                border-radius: 8px;
+                margin-top: 12px;
+                font-weight: bold;
+                color: #38bdf8;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QPushButton {
+                background-color: #1e293b;
+                border: 1px solid #38bdf8;
+                border-radius: 5px;
+                padding: 8px;
+                min-width: 70px;
+                color: #f8fafc;
+            }
+            QPushButton:hover {
+                background-color: #334155;
+            }
+            QPushButton:pressed {
+                background-color: #0ea5e9;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background-color: #0f172a;
+                border: 1px solid #1e293b;
+                color: #475569;
+            }
+            QComboBox {
+                background-color: #1e293b;
+                border: 1px solid #38bdf8;
+                border-radius: 3px;
+                padding: 2px 5px;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #1e293b;
+                height: 6px;
+                background: #0f172a;
+                margin: 2px 0;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #38bdf8;
+                border: 1px solid #0ea5e9;
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }
+        """
 
     def _build_ui(self) -> None:
         root = QVBoxLayout()
@@ -260,6 +327,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     app = QApplication(sys.argv)
+    
+    # Use Fusion to ensure custom blue styling is applied properly
+    app.setStyle("Fusion")
+    
     window = TruckControlGui(args)
     window.show()
     return app.exec()
