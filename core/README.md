@@ -14,10 +14,10 @@ Run all commands from the `core/` directory:
 4. **Run detection**
 
 ```sh
-python -m vision.generate_markers
-python -m vision.calibrate_camera
-python -m vision.calibrate_homography
-python -m vision.detect
+python -m truck_trailer.vision.generate_markers
+python -m truck_trailer.vision.calibrate_camera
+python -m truck_trailer.vision.calibrate_homography
+python -m truck_trailer.vision.detect
 ```
 
 ## Control
@@ -27,7 +27,7 @@ The control system calculates and outputs steering and acceleration using MPC.
 ### Usage
 
 ```sh
-python -m control.simulation
+python -m truck_trailer.control.simulation
 ```
 
 ## GUI
@@ -37,5 +37,19 @@ The GUI provides a interface for sending commands via UART.
 ### Usage
 
 ```sh
-python -m gui.uart_gui --port /dev/ttyACM0 --rpm 30
+python -m truck_trailer.gui.uart_gui --port /dev/ttyACM0 --rpm 30
+```
+
+## Parking
+
+The autonomous parking module orchestrates vision, control, and UART communication.
+
+### Usage
+
+```sh
+# Dry-run (no hardware)
+python -m truck_trailer.parking.runner --dry-run
+
+# With UART hardware
+python -m truck_trailer.parking.runner --port /dev/ttyACM0 --goal "50,50,0,0"
 ```

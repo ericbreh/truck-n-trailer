@@ -1,17 +1,19 @@
 [project]
-name = "core"
+name = "truck_trailer"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "vision",
-    "control",
-    "gui"
+    "opencv-contrib-python",
+    "numpy",
+    "pyomo",
+    "matplotlib",
+    "pyserial",
+    "PyQt6",
 ]
 
-[tool.uv.workspace]
-members = ["vision", "control", "gui"]
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
 
-[tool.uv.sources]
-vision = { workspace = true }
-control = { workspace = true }
-gui = { workspace = true }
+[tool.setuptools.packages.find]
+where = ["."]

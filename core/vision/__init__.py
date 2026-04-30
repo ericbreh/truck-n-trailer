@@ -1,1 +1,0 @@
-"""Truck-N-Trailer CV"""
