@@ -37,7 +37,17 @@ The GUI provides a interface for sending commands via UART.
 ### Usage
 
 ```sh
-python -m truck_trailer.gui.uart_gui --port /dev/ttyACM0 --rpm 30
+python -m truck_trailer.gui --port /dev/ttyACM0 --rpm 30
+```
+
+## UART
+
+Standalone UART communication module (no GUI required).
+
+### Usage
+
+```sh
+python -m truck_trailer.uart --port /dev/ttyACM0
 ```
 
 ## Parking

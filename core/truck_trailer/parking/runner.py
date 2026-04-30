@@ -44,7 +44,7 @@ import numpy as np
 from truck_trailer.parking.body_to_wheels import BodyToWheels
 from truck_trailer.parking.state_estimator import StateEstimator
 from truck_trailer.control.mpc import MPCConfig, TruckTrailerMPC
-from truck_trailer.gui.uart_sender import UartPacketSender
+from truck_trailer.uart import UartPacketSender
 
 # ═══════════════════════════════════════════════════════════════════════════ #
 #  CONFIG — edit these before running                                         #
