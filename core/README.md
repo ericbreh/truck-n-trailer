@@ -36,6 +36,14 @@ The GUI provides a interface for sending commands via UART.
 
 ```sh
 python -m truck_n_trailer.gui --port /dev/ttyACM0 --rpm 30
+python3 -m truck_n_trailer.gui --port /dev/tty.usbserial-5AA60827591 --rpm 30
+python3 -m core.gui --port /dev/tty.usbserial-5AA60827591 --rpm 30
+
+evan flash:
+. ~/esp-idf/export.sh
+cd "/Users/evangrealish/truck-n-trailer/firmware"
+idf.py -p /dev/tty.usbserial-5AA60827591 flash
+idf.py -p /dev/tty.usbserial-5AA60827591 monitor
 ```
 
 ## UART
