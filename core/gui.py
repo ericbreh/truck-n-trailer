@@ -78,6 +78,16 @@ AUTO_HITCH_RELEASE_DEG = 42.0
 AUTO_HITCH_RECOVERY_RPM = 25.0
 AUTO_MIN_EFFECTIVE_RPM = 60.0
 
+# If firmware MOTOR_SIDE_L/R pins drive the opposite physical wheels, set True or use --swap-motors.
+SWAP_LEFT_RIGHT_UART_COMMANDS = False
+
+# If MPC + ω turn the wrong way on the physical truck (left/right wheel speeds reversed),
+# set True: uses v_L = v + ωW/2, v_R = v − ωW/2. Does not change MPC state integration.
+AUTO_INVERT_DIFFERENTIAL_WHEEL_MIX = True
+
+# Vision hitch (truck − trailer) is opposite sign to pot / MPC convention; negate for state + UI.
+VISION_HITCH_SIGN_FLIP_FOR_MPC = True
+
 HITCH_CAL_MEAS_NEG90 = -160.47
 HITCH_CAL_MEAS_ZERO = -24.8
 HITCH_CAL_MEAS_POS90 = 112.8
@@ -230,6 +240,13 @@ class TruckControlGui(QWidget):
         # Apply the Blue Theme
         self.setStyleSheet(self._get_blue_stylesheet())
 
+        self.uart_swap_left_right = bool(
+            SWAP_LEFT_RIGHT_UART_COMMANDS or getattr(args, "swap_motors", False)
+        )
+        self.invert_differential_wheel_mix = bool(
+            AUTO_INVERT_DIFFERENTIAL_WHEEL_MIX or getattr(args, "invert_differential", False)
+        )
+
         self.sender: UartPacketSender | None = None
         self.current_motion = "STOP"
         self.manual_distance_cm = 0.0
@@ -246,6 +263,7 @@ class TruckControlGui(QWidget):
             wheel_track_cm=AUTO_WHEEL_TRACK_CM,
             wheel_radius_cm=AUTO_WHEEL_RADIUS_CM,
             rpm_limit=120.0,
+            invert_differential=self.invert_differential_wheel_mix,
         )
         self.auto_solver_fail_count = 0
         self.auto_hitch_recovery_active = False
@@ -310,6 +328,8 @@ class TruckControlGui(QWidget):
         self.auto_rpm_value = QLabel("0.0")
         self.auto_speed_value = QLabel("0.00")
         self.auto_distance_value = QLabel("0.00")
+        self.auto_mpc_cmd_l_value = QLabel("0.0")
+        self.auto_mpc_cmd_r_value = QLabel("0.0")
 
         self.camera_cap = None
         self.camera_detector = None
@@ -499,6 +519,8 @@ class TruckControlGui(QWidget):
 
         auto_telemetry_group = QGroupBox("Automatic Telemetry")
         auto_telemetry_form = QFormLayout(auto_telemetry_group)
+        auto_telemetry_form.addRow("MPC desired L (RPM)", self.auto_mpc_cmd_l_value)
+        auto_telemetry_form.addRow("MPC desired R (RPM)", self.auto_mpc_cmd_r_value)
         auto_telemetry_form.addRow("Speed (RPM)", self.auto_rpm_value)
         auto_telemetry_form.addRow("Speed (cm/s)", self.auto_speed_value)
         auto_telemetry_form.addRow("Distance (cm)", self.auto_distance_value)
@@ -592,6 +614,15 @@ class TruckControlGui(QWidget):
     @staticmethod
     def _wrap_angle(angle: float) -> float:
         return math.atan2(math.sin(angle), math.cos(angle))
+
+    def _apply_vision_hitch_sign_for_mpc(self, theta_t: float, theta_l: float) -> tuple[float, float]:
+        """Negate hitch angle θ_t − θ_l by adjusting θ_l only (MPC/trailer dynamics stay consistent)."""
+        if not VISION_HITCH_SIGN_FLIP_FOR_MPC:
+            return (float(theta_t), float(theta_l))
+        hitch = self._wrap_angle(float(theta_t) - float(theta_l))
+        hitch_adj = self._wrap_angle(-hitch)
+        theta_l_out = self._wrap_angle(float(theta_t) - hitch_adj)
+        return (float(theta_t), float(theta_l_out))
 
     @staticmethod
     def _polygon_centroid_2d(pts: np.ndarray) -> np.ndarray:
@@ -887,6 +918,8 @@ class TruckControlGui(QWidget):
         self.auto_rpm_value.setText("0.0")
         self.auto_speed_value.setText("0.00")
         self.auto_distance_value.setText("0.00")
+        self.auto_mpc_cmd_l_value.setText("0.0")
+        self.auto_mpc_cmd_r_value.setText("0.0")
 
     def _update_manual_stats(self, rpm_l: float, rpm_r: float) -> None:
         avg_rpm = (float(rpm_l) + float(rpm_r)) * 0.5
@@ -924,8 +957,15 @@ class TruckControlGui(QWidget):
         self.auto_q = np.array([x, y, theta_t, theta_l, v, omega], dtype=float)
 
     def _body_twist_to_wheel_rpm(self, v_cm_s: float, omega_rad_s: float) -> tuple[float, float]:
-        v_l = float(v_cm_s) - (float(omega_rad_s) * AUTO_WHEEL_TRACK_CM) / 2.0
-        v_r = float(v_cm_s) + (float(omega_rad_s) * AUTO_WHEEL_TRACK_CM) / 2.0
+        w = AUTO_WHEEL_TRACK_CM
+        o = float(omega_rad_s)
+        v = float(v_cm_s)
+        if self.auto_wheels.invert_differential:
+            v_l = v + (o * w) / 2.0
+            v_r = v - (o * w) / 2.0
+        else:
+            v_l = v - (o * w) / 2.0
+            v_r = v + (o * w) / 2.0
         circumference = 2.0 * math.pi * AUTO_WHEEL_RADIUS_CM
         rpm_l = (v_l / circumference) * 60.0
         rpm_r = (v_r / circumference) * 60.0
@@ -1102,16 +1142,18 @@ class TruckControlGui(QWidget):
 
     def _car_like_recovery_rpms(self) -> tuple[float, float]:
         # Car-like recovery: back up while turning, without opposite wheel directions.
+        # Automatic / MPC path uses vision hitch only (pot is display-only).
         base_v = -((AUTO_HITCH_RECOVERY_RPM * (2.0 * math.pi * AUTO_WHEEL_RADIUS_CM)) / 60.0)
-        hitch_ref = (
-            self.latest_hitch_vision_deg
-            if self.latest_hitch_vision_deg is not None
-            else self.latest_hitch_display_deg
-        )
-        desired_omega = -1.0 if hitch_ref > 0.0 else 1.0
-        # Ensure both wheels keep same sign by limiting yaw rate magnitude.
         max_omega = (2.0 * abs(base_v) / AUTO_WHEEL_TRACK_CM) * 0.9
-        omega = desired_omega * max_omega
+        if self.latest_hitch_vision_deg is None:
+            omega = 0.0
+        else:
+            hitch_ref = float(self.latest_hitch_vision_deg)
+            if abs(hitch_ref) < 1e-3:
+                omega = 0.0
+            else:
+                desired_omega = -1.0 if hitch_ref > 0.0 else 1.0
+                omega = desired_omega * max_omega
         return self._body_twist_to_wheel_rpm(base_v, omega)
 
     def _car_like_limit_wheel_rpms(self, rpm_l: float, rpm_r: float) -> tuple[float, float]:
@@ -1123,27 +1165,33 @@ class TruckControlGui(QWidget):
         W = AUTO_WHEEL_TRACK_CM
         if W < 1e-6:
             return rpm_l, rpm_r
+        inv = self.auto_wheels.invert_differential
         circ = 2.0 * math.pi * AUTO_WHEEL_RADIUS_CM
         v_l = (float(rpm_l) * circ) / 60.0
         v_r = (float(rpm_r) * circ) / 60.0
         v = 0.5 * (v_l + v_r)
-        omega = (v_r - v_l) / W
+        if inv:
+            omega_model = (v_l - v_r) / W
+        else:
+            omega_model = (v_r - v_l) / W
 
         if abs(v) < 1e-3:
             max_abs_omega = 0.0
         else:
             max_abs_omega = (2.0 * abs(v) / W) * 0.95
 
-        omega_lim = max(-max_abs_omega, min(max_abs_omega, omega))
-        v_l2 = v - W * omega_lim / 2.0
-        v_r2 = v + W * omega_lim / 2.0
+        omega_lim = max(-max_abs_omega, min(max_abs_omega, omega_model))
+        if inv:
+            v_l2 = v + W * omega_lim / 2.0
+            v_r2 = v - W * omega_lim / 2.0
+        else:
+            v_l2 = v - W * omega_lim / 2.0
+            v_r2 = v + W * omega_lim / 2.0
         lim = float(self.auto_wheels.rpm_limit)
         rpm_out_l = max(-lim, min(lim, (v_l2 / circ) * 60.0))
         rpm_out_r = max(-lim, min(lim, (v_r2 / circ) * 60.0))
 
-        v_cmd = 0.5 * (((rpm_out_l * circ) / 60.0) + ((rpm_out_r * circ) / 60.0))
-        omega_cmd = (((rpm_out_r * circ) / 60.0) - ((rpm_out_l * circ) / 60.0)) / W
-        self.auto_wheels.reset(v_cmd, omega_cmd)
+        self.auto_wheels.reset(v, omega_lim)
 
         return rpm_out_l, rpm_out_r
 
@@ -1370,9 +1418,6 @@ class TruckControlGui(QWidget):
                         if self.camera_H is not None and marker_pose_world is not None:
                             truck_pos_world, truck_heading_world = marker_pose_world(truck_corners, self.camera_H)
                             trailer_pos_world, trailer_heading_world = marker_pose_world(trailer_corners, self.camera_H)
-                            hitch_vision_deg = float(
-                                np.degrees(self._wrap_angle(float(truck_heading_world - trailer_heading_world)))
-                            )
 
                             axis_tr = box_id_to_corners.get(11)
                             axis_br = box_id_to_corners.get(12)
@@ -1388,11 +1433,10 @@ class TruckControlGui(QWidget):
                                 y_norm = float(np.linalg.norm(y_vec))
                                 if y_norm > 1e-6:
                                     y_hat = y_vec / y_norm
-                                    x_hat = np.array([y_hat[1], -y_hat[0]], dtype=float)
+                                    x_hat = np.array([-y_hat[1], y_hat[0]], dtype=float)
                                     self.auto_axis_origin_px = br_center_px.astype(float)
                                     self.auto_axis_y_hat_px = y_hat.astype(float)
                                     self.auto_axis_x_hat_px = x_hat.astype(float)
-                                    self.auto_axis_px_per_cm = None
 
                                     # Workspace box center (from inset box corners, same as draw function).
                                     ref_ids = (10, 11, 12, 13)
@@ -1486,6 +1530,11 @@ class TruckControlGui(QWidget):
                                                 )
                                             )
 
+                                            theta_t, theta_l = self._apply_vision_hitch_sign_for_mpc(theta_t, theta_l)
+                                            hitch_vision_deg = float(
+                                                np.degrees(self._wrap_angle(theta_t - theta_l))
+                                            )
+
                                             now = time.monotonic()
                                             v_cm_s = 0.0
                                             omega_rad_s = 0.0
@@ -1573,7 +1622,7 @@ class TruckControlGui(QWidget):
                                             self.auto_vision_q = None
                                         else:
                                             y_hat_px = y_vec_px / y_norm
-                                            x_hat_px = np.array([y_hat_px[1], -y_hat_px[0]], dtype=float)
+                                            x_hat_px = np.array([-y_hat_px[1], y_hat_px[0]], dtype=float)
                                             origin_px = br_center_px
                                             self.auto_axis_origin_px = origin_px.astype(float)
                                             self.auto_axis_x_hat_px = x_hat_px.astype(float)
@@ -1642,6 +1691,9 @@ class TruckControlGui(QWidget):
                                                             float(np.dot(trailer_fwd_px, x_hat_px)),
                                                         )
                                                     )
+                                                )
+                                                theta_t, theta_l = self._apply_vision_hitch_sign_for_mpc(
+                                                    theta_t, theta_l
                                                 )
                                                 hitch_vision_deg = float(
                                                     np.degrees(self._wrap_angle(theta_t - theta_l))
@@ -1763,7 +1815,9 @@ class TruckControlGui(QWidget):
                 self.auto_axis_x_hat_px = None
                 self.auto_axis_y_hat_px = None
                 self.auto_axis_px_per_cm = None
+        self._draw_auto_local_axes(view)
         self._draw_auto_prediction_path(view)
+        self._draw_mpc_goal_marker(view)
         self._update_hitch_vision_display(hitch_vision_deg)
         self.camera_status_label.setText(f"Camera: Connected | Markers: {found_count}")
         rgb = cv2.cvtColor(view, cv2.COLOR_BGR2RGB)
@@ -1776,6 +1830,38 @@ class TruckControlGui(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self.camera_view.setPixmap(pixmap)
+
+    def _draw_auto_local_axes(self, frame) -> None:
+        """Draw +x and +y axis arrows from the local frame origin (marker 12 center) in the image."""
+        if (
+            self.auto_axis_origin_px is None
+            or self.auto_axis_x_hat_px is None
+            or self.auto_axis_y_hat_px is None
+            or self.auto_axis_px_per_cm is None
+            or float(self.auto_axis_px_per_cm) <= 1e-6
+        ):
+            return
+        origin = self.auto_axis_origin_px.astype(float)
+        x_hat = self.auto_axis_x_hat_px.astype(float)
+        y_hat = self.auto_axis_y_hat_px.astype(float)
+        s = float(self.auto_axis_px_per_cm)
+        len_cm = 12.0
+        ox, oy = int(round(origin[0])), int(round(origin[1]))
+        x_end = origin + x_hat * (len_cm * s)
+        y_end = origin + y_hat * (len_cm * s)
+        xe, ye = int(round(float(x_end[0]))), int(round(float(x_end[1])))
+        xn, yn = int(round(float(y_end[0]))), int(round(float(y_end[1])))
+        tip = 0.22
+        thick = 2
+        # BGR: +x red, +y green; black outline for contrast
+        cv2.arrowedLine(frame, (ox, oy), (xe, ye), (0, 0, 0), thick + 2, cv2.LINE_AA, tipLength=tip)
+        cv2.arrowedLine(frame, (ox, oy), (xn, yn), (0, 0, 0), thick + 2, cv2.LINE_AA, tipLength=tip)
+        cv2.arrowedLine(frame, (ox, oy), (xe, ye), (0, 0, 255), thick, cv2.LINE_AA, tipLength=tip)
+        cv2.arrowedLine(frame, (ox, oy), (xn, yn), (0, 255, 0), thick, cv2.LINE_AA, tipLength=tip)
+        cv2.putText(frame, "+x", (xe + 6, ye + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(frame, "+x", (xe + 6, ye + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, "+y", (xn + 6, yn + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(frame, "+y", (xn + 6, yn + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1, cv2.LINE_AA)
 
     def _draw_auto_prediction_path(self, frame) -> None:
         if (
@@ -1821,6 +1907,52 @@ class TruckControlGui(QWidget):
 
         for i in range(len(path_px) - 1):
             _dotted_segment(path_px[i], path_px[i + 1])
+
+    def _draw_mpc_goal_marker(self, frame) -> None:
+        """Draw a red X at the MPC position goal (pivot target) in the vision frame."""
+        if self.auto_goal_xy is None:
+            return
+        if (
+            self.auto_axis_origin_px is None
+            or self.auto_axis_x_hat_px is None
+            or self.auto_axis_y_hat_px is None
+            or self.auto_axis_px_per_cm is None
+            or float(self.auto_axis_px_per_cm) <= 1e-6
+        ):
+            return
+        gx = float(self.auto_goal_xy[0])
+        gy = float(self.auto_goal_xy[1])
+        origin = self.auto_axis_origin_px
+        x_hat = self.auto_axis_x_hat_px
+        y_hat = self.auto_axis_y_hat_px
+        s = float(self.auto_axis_px_per_cm)
+        g = origin + x_hat * (gx * s) + y_hat * (gy * s)
+        px, py = int(round(float(g[0]))), int(round(float(g[1])))
+        arm = max(12, int(round(1.0 * s)))
+        cv2.line(frame, (px - arm, py - arm), (px + arm, py + arm), (0, 0, 0), 6, cv2.LINE_AA)
+        cv2.line(frame, (px - arm, py + arm), (px + arm, py - arm), (0, 0, 0), 6, cv2.LINE_AA)
+        cv2.line(frame, (px - arm, py - arm), (px + arm, py + arm), (0, 0, 255), 3, cv2.LINE_AA)
+        cv2.line(frame, (px - arm, py + arm), (px + arm, py - arm), (0, 0, 255), 3, cv2.LINE_AA)
+        cv2.putText(
+            frame,
+            "GOAL",
+            (px + arm + 4, py - arm - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            "GOAL",
+            (px + arm + 4, py - arm - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
 
     def _update_button_states(self) -> None:
         connected = self.sender is not None
@@ -1913,21 +2045,28 @@ class TruckControlGui(QWidget):
 
                 if self.auto_hitch_recovery_active:
                     rpm_l, rpm_r = self._car_like_recovery_rpms()
-                    self.auto_status_label.setText(
-                        f"MPC: Jackknife recovery ({self.latest_hitch_display_deg:.1f} deg)"
-                    )
+                    hv = self.latest_hitch_vision_deg
+                    hitch_msg = f"{hv:.1f}" if hv is not None else "--"
+                    self.auto_status_label.setText(f"MPC: Jackknife recovery (vision {hitch_msg} deg)")
                 else:
                     rpm_l, rpm_r = self._auto_tick()
                 rpm_l, rpm_r = self._boost_auto_rpms(rpm_l, rpm_r)
                 rpm_l, rpm_r = self._car_like_limit_wheel_rpms(rpm_l, rpm_r)
+                self.auto_mpc_cmd_l_value.setText(f"{rpm_l:.2f}")
+                self.auto_mpc_cmd_r_value.setText(f"{rpm_r:.2f}")
                 print(f"[AUTO] wheels rpm=({rpm_l:.2f},{rpm_r:.2f})")
             else:
                 rpm_l, rpm_r = 0.0, 0.0
+                self.auto_mpc_cmd_l_value.setText("0.00")
+                self.auto_mpc_cmd_r_value.setText("0.00")
         else:
             base_rpm = float(self.speed_slider.value())
             rpm_l, rpm_r = motion_targets(self.current_motion, base_rpm)
         try:
-            sender.send_targets(rpm_l, rpm_r)
+            send_l, send_r = rpm_l, rpm_r
+            if self.uart_swap_left_right:
+                send_l, send_r = rpm_r, rpm_l
+            sender.send_targets(send_l, send_r)
         except Exception:
             self._disconnect()
 
@@ -1974,6 +2113,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Simple PyQt UART drive GUI")
     parser.add_argument("--port", default="", help="Serial port (e.g. /dev/ttyACM0)")
     parser.add_argument("--rpm", type=float, default=30.0, help="Initial base RPM")
+    parser.add_argument(
+        "--swap-motors",
+        action="store_true",
+        help="Swap L/R on UART (use if firmware left channel drives physical right wheel)",
+    )
+    parser.add_argument(
+        "--invert-differential",
+        action="store_true",
+        help="Invert ω wheel mix (v_L=v+ωW/2); use if left/right commanded speeds are reversed",
+    )
     return parser
 
 

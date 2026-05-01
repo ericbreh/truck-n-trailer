@@ -52,11 +52,18 @@ class BodyToWheels:
         Hard clamp applied to both output RPMs.  Should match the motor's
         safe operating range.  The firmware also clamps, but it's cleaner
         to clip here so the MPC never commands impossible targets.
+    invert_differential : bool
+        If True, use v_L = v + ωW/2 and v_R = v − ωW/2 instead of the default
+        minus/plus split. Use when the truck’s wheel mixing matches the MPC ω
+        sign but the commanded left/right wheel speeds are reversed (common with
+        camera frame vs. standard diff-drive convention). Does not change how
+        ω is integrated from α — only the wheel mapping.
     """
 
     wheel_track_cm: float = 12.0   # ← MEASURE YOUR TRUCK and update in runner.py
     wheel_radius_cm: float = 3.0   # ← MEASURE YOUR TRUCK and update in runner.py
     rpm_limit: float = 120.0
+    invert_differential: bool = False
 
     # Internal velocity state — kept in sync with what we've commanded
     _v: float = 0.0
@@ -86,8 +93,14 @@ class BodyToWheels:
         self._omega += alpha * dt
 
         # Differential drive: split body velocity into per-wheel tangential speeds
-        v_l = self._v - (self._omega * self.wheel_track_cm) / 2.0
-        v_r = self._v + (self._omega * self.wheel_track_cm) / 2.0
+        w = self.wheel_track_cm
+        o = self._omega
+        if self.invert_differential:
+            v_l = self._v + (o * w) / 2.0
+            v_r = self._v - (o * w) / 2.0
+        else:
+            v_l = self._v - (o * w) / 2.0
+            v_r = self._v + (o * w) / 2.0
 
         # Convert cm/s → RPM:  RPM = (v / circumference) * 60
         circumference = 2.0 * math.pi * self.wheel_radius_cm
