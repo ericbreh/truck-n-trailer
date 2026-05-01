@@ -22,7 +22,7 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("PyQt6 is required. Install with: pip install PyQt6") from exc
 
-from truck_trailer.uart import UartPacketSender, validate_sender_config
+from truck_n_trailer.uart import UartPacketSender, validate_sender_config
 
 
 DEFAULT_BAUD = 115200

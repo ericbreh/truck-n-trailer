@@ -1,5 +1,5 @@
 """
-truck_trailer/parking/state_estimator.py
+truck_n_trailer/parking/state_estimator.py
 ─────────────────────────
 Wraps the vision pipeline and produces a full 6-element state vector
     q = [x, y, theta_t, theta_l, v, omega]
@@ -32,14 +32,14 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from truck_trailer.vision.camera import open_configured_camera
-from truck_trailer.vision.config import (
+from truck_n_trailer.vision.camera import open_configured_camera
+from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     ARUCO_PARAMS,
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
 )
-from truck_trailer.vision.detect import load_calibration, marker_pose_world
+from truck_n_trailer.vision.detect import load_calibration, marker_pose_world
 
 
 # Marker IDs for truck and trailer (matches vision/config.py)
@@ -106,12 +106,12 @@ class StateEstimator:
         if self._K is None:
             raise RuntimeError(
                 "Camera calibration not found. "
-                "Run: python -m truck_trailer.vision.calibrate_camera"
+                "Run: python -m truck_n_trailer.vision.calibrate_camera"
             )
         if self._H is None:
             raise RuntimeError(
                 "Homography calibration not found. "
-                "Run: python -m truck_trailer.vision.calibrate_homography"
+                "Run: python -m truck_n_trailer.vision.calibrate_homography"
             )
         self._H_inv = np.linalg.inv(self._H)
         self._detector = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)

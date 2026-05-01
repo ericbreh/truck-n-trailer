@@ -3,7 +3,7 @@ import cv2
 
 MARKERS_DIR = Path(__file__).parent / "markers"
 
-from truck_trailer.vision.config import (
+from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,

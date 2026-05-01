@@ -1,5 +1,5 @@
 [project]
-name = "truck_trailer"
+name = "truck_n_trailer"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,5 +15,8 @@ dependencies = [
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["."]
+[tool.setuptools]
+packages = ["truck_n_trailer", "truck_n_trailer.vision", "truck_n_trailer.control", "truck_n_trailer.parking"]
+
+[tool.setuptools.package-dir]
+truck_n_trailer = "."

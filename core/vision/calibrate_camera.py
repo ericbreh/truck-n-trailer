@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-from truck_trailer.vision.camera import open_configured_camera
-from truck_trailer.vision.config import (
+from truck_n_trailer.vision.camera import open_configured_camera
+from truck_n_trailer.vision.config import (
     CAMERA_PARAMS_PATH,
 )
 

@@ -1,5 +1,5 @@
 """
-truck_trailer/parking/runner.py
+truck_n_trailer/parking/runner.py
 ────────────────
 Closed-loop autonomous parking controller.
 
@@ -14,10 +14,10 @@ Data flow every tick
 Usage
 ─────
     cd core/
-    python -m truck_trailer.parking.runner --port /dev/ttyACM0 --goal "50,50,0,0"
+    python -m truck_n_trailer.parking.runner --port /dev/ttyACM0 --goal "50,50,0,0"
 
     # Dry-run (no hardware attached — prints commands instead of sending)
-    python -m truck_trailer.parking.runner --dry-run
+    python -m truck_n_trailer.parking.runner --dry-run
 
 Tuning checklist before first run
 ──────────────────────────────────
@@ -41,10 +41,10 @@ from typing import Optional
 import numpy as np
 
 # ── project imports ──────────────────────────────────────────────────────── #
-from truck_trailer.parking.body_to_wheels import BodyToWheels
-from truck_trailer.parking.state_estimator import StateEstimator
-from truck_trailer.control.mpc import MPCConfig, TruckTrailerMPC
-from truck_trailer.uart import UartPacketSender
+from truck_n_trailer.parking.body_to_wheels import BodyToWheels
+from truck_n_trailer.parking.state_estimator import StateEstimator
+from truck_n_trailer.control.mpc import MPCConfig, TruckTrailerMPC
+from truck_n_trailer.uart import UartPacketSender
 
 # ═══════════════════════════════════════════════════════════════════════════ #
 #  CONFIG — edit these before running                                         #
