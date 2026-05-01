@@ -593,6 +593,25 @@ class TruckControlGui(QWidget):
     def _wrap_angle(angle: float) -> float:
         return math.atan2(math.sin(angle), math.cos(angle))
 
+    @staticmethod
+    def _polygon_centroid_2d(pts: np.ndarray) -> np.ndarray:
+        """Area centroid of a simple closed polygon (vertices in order, not repeated at end)."""
+        p = np.asarray(pts, dtype=float).reshape(-1, 2)
+        n = p.shape[0]
+        if n < 3:
+            return p.mean(axis=0)
+        x = p[:, 0]
+        y = p[:, 1]
+        x_n = np.roll(x, -1)
+        y_n = np.roll(y, -1)
+        cross = x * y_n - x_n * y
+        a = 0.5 * float(np.sum(cross))
+        if abs(a) < 1e-9:
+            return p.mean(axis=0)
+        cx = float(np.sum((x + x_n) * cross) / (6.0 * a))
+        cy = float(np.sum((y + y_n) * cross) / (6.0 * a))
+        return np.array([cx, cy], dtype=float)
+
     def _auto_reached_goal(self) -> bool:
         cfg = self.auto_mpc.cfg
         pos_err = float(np.linalg.norm(self.auto_q[:2] - cfg.q_des[:2]))
@@ -628,9 +647,9 @@ class TruckControlGui(QWidget):
         q_des = self.auto_mpc.cfg.q_des.copy()
         q_des[0] = float(self.auto_goal_xy[0])
         q_des[1] = float(self.auto_goal_xy[1])
-        # Position-only objective: keep current headings as desired headings.
-        q_des[2] = float(self.auto_q[2])
-        q_des[3] = float(self.auto_q[3])
+        # Straight alignment in vision local frame: +x is 0 rad for truck and trailer.
+        q_des[2] = 0.0
+        q_des[3] = 0.0
         q_des[4] = 0.0
         q_des[5] = 0.0
         self.auto_mpc.cfg.q_des = q_des
@@ -691,8 +710,7 @@ class TruckControlGui(QWidget):
         print(
             f"[AUTO] q=({self.auto_q[0]:.2f},{self.auto_q[1]:.2f},"
             f"{self.auto_q[2]:.2f},{self.auto_q[3]:.2f}) "
-            f"u=({float(u0[0]):.2f},{float(u0[1]):.2f}) "
-            f"rpm=({rpm_l:.2f},{rpm_r:.2f})"
+            f"u=({float(u0[0]):.2f},{float(u0[1]):.2f})"
         )
         return rpm_l, rpm_r
 
@@ -1085,11 +1103,49 @@ class TruckControlGui(QWidget):
     def _car_like_recovery_rpms(self) -> tuple[float, float]:
         # Car-like recovery: back up while turning, without opposite wheel directions.
         base_v = -((AUTO_HITCH_RECOVERY_RPM * (2.0 * math.pi * AUTO_WHEEL_RADIUS_CM)) / 60.0)
-        desired_omega = -1.0 if self.latest_hitch_display_deg > 0.0 else 1.0
+        hitch_ref = (
+            self.latest_hitch_vision_deg
+            if self.latest_hitch_vision_deg is not None
+            else self.latest_hitch_display_deg
+        )
+        desired_omega = -1.0 if hitch_ref > 0.0 else 1.0
         # Ensure both wheels keep same sign by limiting yaw rate magnitude.
         max_omega = (2.0 * abs(base_v) / AUTO_WHEEL_TRACK_CM) * 0.9
         omega = desired_omega * max_omega
         return self._body_twist_to_wheel_rpm(base_v, omega)
+
+    def _car_like_limit_wheel_rpms(self, rpm_l: float, rpm_r: float) -> tuple[float, float]:
+        """
+        Limit differential so wheel tangential speeds keep the same sign (no tank-turn):
+        require |ω| ≤ 2|v|/W so v ± ωW/2 do not straddle zero.
+        Keeps BodyToWheels integrator aligned with what we actually send.
+        """
+        W = AUTO_WHEEL_TRACK_CM
+        if W < 1e-6:
+            return rpm_l, rpm_r
+        circ = 2.0 * math.pi * AUTO_WHEEL_RADIUS_CM
+        v_l = (float(rpm_l) * circ) / 60.0
+        v_r = (float(rpm_r) * circ) / 60.0
+        v = 0.5 * (v_l + v_r)
+        omega = (v_r - v_l) / W
+
+        if abs(v) < 1e-3:
+            max_abs_omega = 0.0
+        else:
+            max_abs_omega = (2.0 * abs(v) / W) * 0.95
+
+        omega_lim = max(-max_abs_omega, min(max_abs_omega, omega))
+        v_l2 = v - W * omega_lim / 2.0
+        v_r2 = v + W * omega_lim / 2.0
+        lim = float(self.auto_wheels.rpm_limit)
+        rpm_out_l = max(-lim, min(lim, (v_l2 / circ) * 60.0))
+        rpm_out_r = max(-lim, min(lim, (v_r2 / circ) * 60.0))
+
+        v_cmd = 0.5 * (((rpm_out_l * circ) / 60.0) + ((rpm_out_r * circ) / 60.0))
+        omega_cmd = (((rpm_out_r * circ) / 60.0) - ((rpm_out_l * circ) / 60.0)) / W
+        self.auto_wheels.reset(v_cmd, omega_cmd)
+
+        return rpm_out_l, rpm_out_r
 
     def _boost_auto_rpms(self, rpm_l: float, rpm_r: float) -> tuple[float, float]:
         peak = max(abs(rpm_l), abs(rpm_r))
@@ -1361,9 +1417,9 @@ class TruckControlGui(QWidget):
                                         in_tr = w_tr + inset_side * _unit(w_tl - w_tr) - extend_vertical * _unit(w_br - w_tr)
                                         in_br = w_br + inset_side * _unit(w_bl - w_br) - extend_vertical * _unit(w_tr - w_br)
                                         in_bl = w_bl + inset_side * _unit(w_br - w_bl) - extend_vertical * _unit(w_tl - w_bl)
-                                        box_center_world = (
-                                            np.array([in_tl, in_tr, in_br, in_bl], dtype=np.float32).mean(axis=0)
-                                        ).astype(float)
+                                        box_center_world = self._polygon_centroid_2d(
+                                            np.array([in_tl, in_tr, in_br, in_bl], dtype=float)
+                                        )
                                         rel_goal = box_center_world - origin
                                         self.auto_goal_xy = np.array(
                                             [float(np.dot(rel_goal, x_hat)), float(np.dot(rel_goal, y_hat))],
@@ -1552,7 +1608,9 @@ class TruckControlGui(QWidget):
                                                 in_tr = p_tr + inset_side_px * _unit(p_tl - p_tr) - extend_vertical_px * _unit(p_br - p_tr)
                                                 in_br = p_br + inset_side_px * _unit(p_bl - p_br) - extend_vertical_px * _unit(p_tr - p_br)
                                                 in_bl = p_bl + inset_side_px * _unit(p_br - p_bl) - extend_vertical_px * _unit(p_tl - p_bl)
-                                                box_center_px = np.array([in_tl, in_tr, in_br, in_bl], dtype=float).mean(axis=0)
+                                                box_center_px = self._polygon_centroid_2d(
+                                                    np.array([in_tl, in_tr, in_br, in_bl], dtype=float)
+                                                )
                                                 self.auto_goal_xy = _to_local_cm(box_center_px)
 
                                             truck_center_px = truck_corners.mean(axis=0).astype(float)
@@ -1861,6 +1919,8 @@ class TruckControlGui(QWidget):
                 else:
                     rpm_l, rpm_r = self._auto_tick()
                 rpm_l, rpm_r = self._boost_auto_rpms(rpm_l, rpm_r)
+                rpm_l, rpm_r = self._car_like_limit_wheel_rpms(rpm_l, rpm_r)
+                print(f"[AUTO] wheels rpm=({rpm_l:.2f},{rpm_r:.2f})")
             else:
                 rpm_l, rpm_r = 0.0, 0.0
         else:
