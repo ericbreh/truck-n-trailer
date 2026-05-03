@@ -27,7 +27,7 @@ Tuning note
 -----------
 W and r_wheel must match the physical model.  Neither is in the existing
 codebase, so they are exposed as constructor parameters with placeholder
-defaults.  Measure your model truck and set them in runner.py before
+defaults.  Measure your model truck and set them in the GUI before
 running.
 """
 
@@ -54,14 +54,14 @@ class BodyToWheels:
         to clip here so the MPC never commands impossible targets.
     invert_differential : bool
         If True, use v_L = v + ωW/2 and v_R = v − ωW/2 instead of the default
-        minus/plus split. Use when the truck’s wheel mixing matches the MPC ω
+        minus/plus split. Use when the truck's wheel mixing matches the MPC ω
         sign but the commanded left/right wheel speeds are reversed (common with
         camera frame vs. standard diff-drive convention). Does not change how
         ω is integrated from α — only the wheel mapping.
     """
 
-    wheel_track_cm: float = 12.0   # ← MEASURE YOUR TRUCK and update in runner.py
-    wheel_radius_cm: float = 3.0   # ← MEASURE YOUR TRUCK and update in runner.py
+    wheel_track_cm: float = 12.0
+    wheel_radius_cm: float = 3.0
     rpm_limit: float = 120.0
     invert_differential: bool = False
 

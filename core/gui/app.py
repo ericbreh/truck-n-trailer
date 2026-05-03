@@ -53,7 +53,7 @@ from .constants import (
 from .widgets import AutoStateView, HitchGauge, TelemetryCard, StatusBadge, DashboardHeader
 from .stylesheet import get_blue_stylesheet
 from truck_n_trailer.control.mpc import MPCConfig, TruckTrailerMPC
-from truck_n_trailer.parking.body_to_wheels import BodyToWheels
+from truck_n_trailer.body_to_wheels import BodyToWheels
 from truck_n_trailer.uart import UartPacketSender, validate_sender_config
 
 try:

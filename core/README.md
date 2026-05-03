@@ -45,25 +45,3 @@ cd "/Users/evangrealish/truck-n-trailer/firmware"
 idf.py -p /dev/tty.usbserial-5AA60827591 flash
 idf.py -p /dev/tty.usbserial-5AA60827591 monitor
 ```
-
-## UART
-
-### Usage
-
-```sh
-python -m truck_n_trailer.uart --port /dev/ttyACM0
-```
-
-## Parking
-
-The autonomous parking module orchestrates vision, control, and UART communication.
-
-### Usage
-
-```sh
-# Dry-run (no hardware)
-python -m truck_n_trailer.parking.runner --dry-run
-
-# With UART hardware
-python -m truck_n_trailer.parking.runner --port /dev/ttyACM0 --goal "50,50,0,0"
-```
