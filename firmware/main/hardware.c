@@ -2,6 +2,7 @@
 #include "config.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_attr.h"
 #include "esp_err.h"
 #include <stdatomic.h>
@@ -206,4 +207,50 @@ void set_motor_speed(MotorSide side, int duty) {
   }
   ledc_update_duty(LEDC_MODE, motor_cfg.in1_channel);
   ledc_update_duty(LEDC_MODE, motor_cfg.in2_channel);
+}
+
+// Potentiometer
+#define POT_ADC_UNIT ADC_UNIT_1
+#define POT_ADC_CHANNEL ADC_CHANNEL_6
+
+static adc_oneshot_unit_handle_t s_pot_adc_handle = NULL;
+static bool s_pot_adc_ready = false;
+
+bool pot_adc_init(void) {
+  adc_oneshot_unit_init_cfg_t unit_cfg = {
+      .unit_id = POT_ADC_UNIT,
+      .ulp_mode = ADC_ULP_MODE_DISABLE,
+  };
+  esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &s_pot_adc_handle);
+  if (err != ESP_OK) {
+    return false;
+  }
+
+  adc_oneshot_chan_cfg_t chan_cfg = {
+      .atten = ADC_ATTEN_DB_12,
+      .bitwidth = ADC_BITWIDTH_DEFAULT,
+  };
+  err =
+      adc_oneshot_config_channel(s_pot_adc_handle, POT_ADC_CHANNEL, &chan_cfg);
+  if (err != ESP_OK) {
+    adc_oneshot_del_unit(s_pot_adc_handle);
+    s_pot_adc_handle = NULL;
+    return false;
+  }
+
+  return true;
+}
+
+float read_pot_raw(void) {
+  if (!s_pot_adc_ready || s_pot_adc_handle == NULL) {
+    return 0.0f;
+  }
+
+  int raw = 0;
+  esp_err_t err = adc_oneshot_read(s_pot_adc_handle, POT_ADC_CHANNEL, &raw);
+  if (err != ESP_OK) {
+    return 0.0f;
+  }
+
+  return (float)raw;
 }

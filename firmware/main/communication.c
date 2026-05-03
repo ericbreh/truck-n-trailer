@@ -13,7 +13,7 @@
 #include <string.h>
 
 #define UART_NUM UART_NUM_0
-#define CMD_START "CMD,"
+#define CMD_START "C,"
 
 static const char *TAG = "communication";
 static QueueHandle_t uart_event_queue = NULL;
@@ -23,7 +23,7 @@ typedef struct {
   float target_rpm_r;
 } CommandPacket;
 
-static uint16_t crc16_modbus(const uint8_t *data, size_t len) {
+uint16_t crc16_modbus(const uint8_t *data, size_t len) {
   uint16_t crc = 0xFFFF;
   for (size_t i = 0; i < len; i++) {
     crc ^= data[i];
@@ -211,4 +211,16 @@ esp_err_t communication_init(void) {
 
   ESP_LOGI(TAG, "Communication initialized at %d baud", UART_BAUD_RATE);
   return ESP_OK;
+}
+
+void send_telemetry(float rpm_l, float rpm_r, float pot_angle) {
+  // Format: T,rpm_l,rpm_r,pot_angle
+  char buf[64];
+  int len =
+      snprintf(buf, sizeof(buf), "T,%.3f,%.3f,%.3f", rpm_l, rpm_r, pot_angle);
+
+  uint16_t crc = crc16_modbus((const uint8_t *)buf, len);
+  len += snprintf(buf + len, sizeof(buf) - len, ",%04X\n", crc);
+
+  uart_write_bytes(UART_NUM, buf, len);
 }

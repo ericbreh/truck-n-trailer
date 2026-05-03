@@ -59,9 +59,3 @@
 
 // Kill Switch
 #define KILL_SWITCH_GPIO_PIN 38
-
-// Potentiometer
-#define POT_TRAVEL_DEG 270.0f
-#define POT_RAW_MIN 0
-#define POT_RAW_MAX 4095
-#define POT_ZERO_OFFSET_DEG 0.0f

@@ -1,7 +1,7 @@
 #include "control.h"
 
+#include "communication.h"
 #include "config.h"
-#include "esp_adc/adc_oneshot.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "hardware.h"
@@ -13,11 +13,6 @@
 #include <stdio.h>
 
 static const char *TAG = "control";
-static adc_oneshot_unit_handle_t s_pot_adc_handle = NULL;
-static bool s_pot_adc_ready = false;
-
-#define POT_ADC_UNIT ADC_UNIT_1
-#define POT_ADC_CHANNEL ADC_CHANNEL_6
 
 static int target_sign(float value) {
   if (value > CMD_ZERO_RPM_EPS) {
@@ -27,60 +22,6 @@ static int target_sign(float value) {
     return -1;
   }
   return 0;
-}
-
-static bool pot_adc_init(void) {
-  adc_oneshot_unit_init_cfg_t unit_cfg = {
-      .unit_id = POT_ADC_UNIT,
-      .ulp_mode = ADC_ULP_MODE_DISABLE,
-  };
-  esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &s_pot_adc_handle);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "pot adc unit init failed (%s)", esp_err_to_name(err));
-    return false;
-  }
-
-  adc_oneshot_chan_cfg_t chan_cfg = {
-      .atten = ADC_ATTEN_DB_12,
-      .bitwidth = ADC_BITWIDTH_DEFAULT,
-  };
-  err = adc_oneshot_config_channel(s_pot_adc_handle, POT_ADC_CHANNEL, &chan_cfg);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "pot adc channel config failed (%s)", esp_err_to_name(err));
-    adc_oneshot_del_unit(s_pot_adc_handle);
-    s_pot_adc_handle = NULL;
-    return false;
-  }
-
-  return true;
-}
-
-static float read_pot_angle_deg(void) {
-  if (!s_pot_adc_ready || s_pot_adc_handle == NULL) {
-    return 0.0f;
-  }
-
-  int raw = 0;
-  esp_err_t err = adc_oneshot_read(s_pot_adc_handle, POT_ADC_CHANNEL, &raw);
-  if (err != ESP_OK) {
-    return 0.0f;
-  }
-
-  int raw_min = POT_RAW_MIN;
-  int raw_max = POT_RAW_MAX;
-  if (raw_max <= raw_min) {
-    return 0.0f;
-  }
-  if (raw < raw_min) {
-    raw = raw_min;
-  } else if (raw > raw_max) {
-    raw = raw_max;
-  }
-
-  // Map calibrated raw range to the physical pot travel, then center at 0.
-  const float norm = (float)(raw - raw_min) / (float)(raw_max - raw_min);
-  const float angle_centered = norm * POT_TRAVEL_DEG - (POT_TRAVEL_DEG * 0.5f);
-  return angle_centered + POT_ZERO_OFFSET_DEG;
 }
 
 static bool IRAM_ATTR on_control_timer_alarm(
@@ -186,17 +127,17 @@ static void control_task_entry(void *arg) {
     prev_target_rpm_l = target_rpm_l;
     prev_target_rpm_r = target_rpm_r;
 
+    // Send telemetry (10Hz)
     telemetry_div++;
     if (telemetry_div >= 10) {
       telemetry_div = 0;
-      printf("%.2f,%.2f,%.2f\n", rpm_l, rpm_r, read_pot_angle_deg());
+      send_telemetry(rpm_l, rpm_r, read_pot_raw());
     }
   }
 }
 
 esp_err_t control_init(ControlContext *ctx) {
-  s_pot_adc_ready = pot_adc_init();
-  if (!s_pot_adc_ready) {
+  if (!pot_adc_init()) {
     ESP_LOGW(TAG, "pot telemetry disabled");
   }
 

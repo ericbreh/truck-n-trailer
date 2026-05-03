@@ -45,7 +45,6 @@ from .constants import (
     AUTO_START_YAW_RAD,
     AUTO_HITCH_HARD_LIMIT_DEG, AUTO_HITCH_RELEASE_DEG,
     AUTO_HITCH_RECOVERY_RPM, AUTO_MIN_EFFECTIVE_RPM,
-    HITCH_CAL_MEAS_NEG90, HITCH_CAL_MEAS_ZERO, HITCH_CAL_MEAS_POS90,
     HITCH_REAL_ZERO, HITCH_REAL_NEG_WORKING, HITCH_REAL_POS_WORKING,
     HITCH_MEAS_ZERO, HITCH_MEAS_NEG_WORKING, HITCH_MEAS_POS_WORKING,
     MARKER_SIZE_CM, WORKSPACE_BOX_SIDE_INSET_CM, WORKSPACE_BOX_VERTICAL_EXTEND_CM,
@@ -547,19 +546,6 @@ class TruckControlGui(QWidget):
     def _update_speed_label(self, value: int) -> None:
         self.speed_value.setText(f"{value} RPM")
 
-    def _calibrate_hitch_angle(self, measured_deg: float) -> float:
-        m = float(measured_deg)
-        if m <= HITCH_CAL_MEAS_ZERO:
-            denom = HITCH_CAL_MEAS_ZERO - HITCH_CAL_MEAS_NEG90
-            if abs(denom) < 1e-9:
-                return 0.0
-            return -90.0 + ((m - HITCH_CAL_MEAS_NEG90) * (90.0 / denom))
-
-        denom = HITCH_CAL_MEAS_POS90 - HITCH_CAL_MEAS_ZERO
-        if abs(denom) < 1e-9:
-            return 0.0
-        return (m - HITCH_CAL_MEAS_ZERO) * (90.0 / denom)
-
     def _linearize_hitch_output(self, angle_deg: float) -> float:
         a = float(angle_deg)
         if a <= self.hitch_meas_zero:
@@ -574,9 +560,8 @@ class TruckControlGui(QWidget):
         t = (a - self.hitch_meas_zero) / denom
         return HITCH_REAL_ZERO + t * (HITCH_REAL_POS_WORKING - HITCH_REAL_ZERO)
 
-    def _update_hitch_angle_display(self, angle_deg: float) -> None:
-        corrected = self._calibrate_hitch_angle(angle_deg)
-        corrected = self._linearize_hitch_output(corrected)
+    def _update_hitch_angle_display(self, raw_adc: float) -> None:
+        corrected = self._linearize_hitch_output(raw_adc)
         clamped = max(-180.0, min(180.0, float(corrected)))
         self.latest_hitch_display_deg = clamped
         self.hitch_angle_gauge.setValue(clamped)
@@ -601,7 +586,7 @@ class TruckControlGui(QWidget):
             if raw is None:
                 return None
             self.latest_hitch_raw_deg = raw
-        return self._calibrate_hitch_angle(raw)
+        return raw  # Return raw ADC directly
 
     def _run_hitch_calibration(self) -> None:
         if self.sender is None:

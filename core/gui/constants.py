@@ -14,17 +14,18 @@ AUTO_HITCH_RELEASE_DEG = 42.0
 AUTO_HITCH_RECOVERY_RPM = 25.0
 AUTO_MIN_EFFECTIVE_RPM = 60.0
 
-HITCH_CAL_MEAS_NEG90 = -160.47
-HITCH_CAL_MEAS_ZERO = -24.8
-HITCH_CAL_MEAS_POS90 = 112.8
+# Hitch real working range (degrees) - used for display during calibration
 HITCH_OUT_NEG135 = -103.0
 HITCH_OUT_NEG90 = -83.4
 HITCH_REAL_ZERO = 0.0
 HITCH_REAL_NEG_WORKING = -55.5
 HITCH_REAL_POS_WORKING = 55.5
-HITCH_MEAS_ZERO = 8.1
-HITCH_MEAS_NEG_WORKING = -42.7
-HITCH_MEAS_POS_WORKING = 45.6
+
+# These are set during runtime calibration (raw ADC values at those positions)
+# Default values are placeholders - run calibration to update
+HITCH_MEAS_ZERO = 2048.0  # Raw ADC at hitch 0° position
+HITCH_MEAS_NEG_WORKING = 1024.0  # Raw ADC at -55.5° position  
+HITCH_MEAS_POS_WORKING = 3072.0  # Raw ADC at +55.5° position
 
 MARKER_SIZE_CM = 5.3
 WORKSPACE_BOX_SIDE_INSET_CM = 2.0

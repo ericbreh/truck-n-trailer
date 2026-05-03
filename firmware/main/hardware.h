@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
@@ -12,3 +13,6 @@ void init_pwm(void);
 void init_encoders(void);
 int32_t encoder_consume_delta(MotorSide side);
 void set_motor_speed(MotorSide side, int duty);
+
+bool pot_adc_init(void);
+float read_pot_raw(void);
