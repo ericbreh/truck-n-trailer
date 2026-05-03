@@ -60,8 +60,7 @@
 // Kill Switch
 #define KILL_SWITCH_GPIO_PIN 38
 
-// Potentiometer (hitch angle)
-#define POT_GPIO_PIN 34 // A2 / GPIO34 on Feather ESP32 V2
+// Potentiometer
 #define POT_TRAVEL_DEG 270.0f
 #define POT_RAW_MIN 0
 #define POT_RAW_MAX 4095

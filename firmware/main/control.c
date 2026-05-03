@@ -186,15 +186,10 @@ static void control_task_entry(void *arg) {
     prev_target_rpm_l = target_rpm_l;
     prev_target_rpm_r = target_rpm_r;
 
-    printf("dt=%3.3f age=%lld L(cmd=%6.1f rpm=%7.2f pwm=%4d) R(cmd=%6.1f "
-           "rpm=%7.2f pwm=%4d) kill=%d\n",
-           dt, (long long)shared_get_command_age_ms(), target_rpm_l, rpm_l,
-           pwm_l, target_rpm_r, rpm_r, pwm_r, shared_kill_is_latched() ? 1 : 0);
-
     telemetry_div++;
     if (telemetry_div >= 10) {
       telemetry_div = 0;
-      printf("POT,%.2f\n", read_pot_angle_deg());
+      printf("%.2f,%.2f,%.2f\n", rpm_l, rpm_r, read_pot_angle_deg());
     }
   }
 }

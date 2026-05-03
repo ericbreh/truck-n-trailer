@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import re
 import sys
 import time
 from dataclasses import dataclass
@@ -81,34 +80,23 @@ class UartPacketSender:
         parts = self._rx_buffer.split("\n")
         self._rx_buffer = parts[-1]
 
-        rpm_re = re.compile(r"L\(cmd=\s*[-+0-9.]+\s*rpm=\s*([-+0-9.]+).+R\(cmd=\s*[-+0-9.]+\s*rpm=\s*([-+0-9.]+)")
+        # Parse completed lines - format: L_rpm,R_rpm,POT_angle
         for line in parts[:-1]:
-            txt = line.strip()
-            if txt.startswith("POT,"):
-                _, value = txt.split(",", 1)
+            values = line.strip().split(",")
+            if len(values) == 3:
                 try:
-                    self._latest_pot_angle_deg = float(value)
+                    self._latest_motor_rpms = (float(values[0]), float(values[1]))
+                    self._latest_pot_angle_deg = float(values[2])
                 except ValueError:
                     pass
-                continue
-
-            m = rpm_re.search(txt)
-            if m is None:
-                continue
-            try:
-                rpm_l = float(m.group(1))
-                rpm_r = float(m.group(2))
-            except ValueError:
-                continue
-            self._latest_motor_rpms = (rpm_l, rpm_r)
 
     def read_pot_angle_deg(self) -> float | None:
-        """Read latest POT telemetry line formatted as: POT,<angle_deg>."""
+        """Read latest POT telemetry from format: L_rpm,R_rpm,POT_angle"""
         self._poll_rx()
         return self._latest_pot_angle_deg
 
     def read_motor_rpms(self) -> tuple[float, float] | None:
-        """Read latest measured motor RPMs parsed from control-loop logs."""
+        """Read latest measured motor RPMs from format: L_rpm,R_rpm,POT_angle"""
         self._poll_rx()
         return self._latest_motor_rpms
 
