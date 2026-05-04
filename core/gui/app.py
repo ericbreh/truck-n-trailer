@@ -405,7 +405,8 @@ class TruckControlGui(QWidget):
         if self.vision.vision_q is None or self.vision.goal_xy is None:
             self.auto_status_label.setText("MPC: Need vision lock (truck, trailer, refs)")
             return
-        if self.auto.start(self.vision.vision_q, self.vision.goal_xy):
+        motor_rpms = self.sender.read_motor_rpms()
+        if self.auto.start(self.vision.vision_q, self.vision.goal_xy, motor_rpms):
             self.auto_state_view.reset_path(self.auto.q)
             self._reset_manual_stats()
             self.auto_status_label.setText("MPC: Running")
@@ -619,7 +620,7 @@ class TruckControlGui(QWidget):
 
         if self.mode_stack.currentIndex() == 1:
             if self.auto.running:
-                rpm_l, rpm_r = self.auto.tick(self.vision.vision_q, self.vision.goal_xy)
+                rpm_l, rpm_r = self.auto.tick(self.vision.vision_q, self.vision.goal_xy, motor_rpms)
                 self.auto_status_label.setText("MPC: Running")
                 if self.auto.reached_goal():
                     self.auto.stop()

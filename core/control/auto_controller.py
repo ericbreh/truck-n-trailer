@@ -1,6 +1,5 @@
 """Automatic MPC control for truck-trailer system."""
 
-import math
 from typing import Optional, Tuple
 
 import numpy as np
@@ -27,13 +26,6 @@ class AutoController:
         self.q = self.mpc.cfg.q0.copy().astype(float)
         self.u_guess = np.zeros((2, self.mpc.cfg.N), dtype=float)
         self.solver_fail_count = 0
-        self.last_meas_rpms: Optional[Tuple[float, float]] = None
-        self.last_meas_hitch_deg: Optional[float] = None
-        self.prev_vision_t: Optional[float] = None
-        self.prev_pivot_xy: Optional[np.ndarray] = None
-        self.prev_truck_heading: Optional[float] = None
-        self.vel_ema_cm_s = 0.0
-        self.omega_ema_rad_s = 0.0
         self.pred_path_xy_cm: list[np.ndarray] = []
         self.preview_pred_path_xy_cm: list[np.ndarray] = []
 
@@ -45,13 +37,6 @@ class AutoController:
         self.u_guess = np.zeros((2, self.mpc.cfg.N), dtype=float)
         self.wheels.reset(v=float(self.q[4]), omega=float(self.q[5]))
         self.solver_fail_count = 0
-        self.last_meas_rpms = None
-        self.last_meas_hitch_deg = None
-        self.prev_vision_t = None
-        self.prev_pivot_xy = None
-        self.prev_truck_heading = None
-        self.vel_ema_cm_s = 0.0
-        self.omega_ema_rad_s = 0.0
         self.pred_path_xy_cm = []
         self.preview_pred_path_xy_cm = []
 
@@ -115,11 +100,27 @@ class AutoController:
         finally:
             self.mpc.cfg.q_des = saved_q_des
 
-    def tick(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray]) -> Tuple[float, float]:
+    def tick(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray], motor_rpms: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
         if not self.running or vision_q is None or goal_xy is None:
             return 0.0, 0.0
 
-        self.q = vision_q.copy()
+        # Pose from vision (camera)
+        x = float(vision_q[0])
+        y = float(vision_q[1])
+        theta_t = float(vision_q[2])
+        theta_l = float(vision_q[3])
+
+        # Velocities from encoders
+        v = 0.0
+        omega = 0.0
+        if motor_rpms is not None:
+            rpm_l, rpm_r = motor_rpms
+            v_l = rpm_to_cm_s(float(rpm_l), params.WHEEL_RADIUS_CM)
+            v_r = rpm_to_cm_s(float(rpm_r), params.WHEEL_RADIUS_CM)
+            v = 0.5 * (v_l + v_r)
+            omega = (v_r - v_l) / params.WHEEL_TRACK_CM
+
+        self.q = np.array([x, y, theta_t, theta_l, v, omega], dtype=float)
         q_des = self.mpc.cfg.q_des.copy()
         q_des[0] = float(goal_xy[0])
         q_des[1] = float(goal_xy[1])
@@ -167,11 +168,25 @@ class AutoController:
         self.u_guess = np.hstack([u_opt[:, 1:], u_opt[:, -1:]])
         return rpm_l, rpm_r
 
-    def start(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray]) -> bool:
+    def start(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray], motor_rpms: Optional[Tuple[float, float]] = None) -> bool:
         if vision_q is None or goal_xy is None:
             return False
         self.reset_state()
-        self.q = vision_q.copy()
+        # Pose from vision
+        x = float(vision_q[0])
+        y = float(vision_q[1])
+        theta_t = float(vision_q[2])
+        theta_l = float(vision_q[3])
+        # Velocities from encoders
+        v = 0.0
+        omega = 0.0
+        if motor_rpms is not None:
+            rpm_l, rpm_r = motor_rpms
+            v_l = rpm_to_cm_s(float(rpm_l), params.WHEEL_RADIUS_CM)
+            v_r = rpm_to_cm_s(float(rpm_r), params.WHEEL_RADIUS_CM)
+            v = 0.5 * (v_l + v_r)
+            omega = (v_r - v_l) / params.WHEEL_TRACK_CM
+        self.q = np.array([x, y, theta_t, theta_l, v, omega], dtype=float)
         self.running = True
         return True
 
@@ -180,19 +195,3 @@ class AutoController:
         self.wheels.reset(v=0.0, omega=0.0)
         self.pred_path_xy_cm = []
         self.preview_pred_path_xy_cm = []
-
-    def update_state_from_measurements(self, motor_rpms: Tuple[float, float], hitch_deg_display: float) -> None:
-        cfg = self.mpc.cfg
-        dt = cfg.dt
-        rpm_l, rpm_r = motor_rpms
-        v_l = rpm_to_cm_s(float(rpm_l), params.WHEEL_RADIUS_CM)
-        v_r = rpm_to_cm_s(float(rpm_r), params.WHEEL_RADIUS_CM)
-        v = 0.5 * (v_l + v_r)
-        omega = (v_r - v_l) / params.WHEEL_TRACK_CM
-        theta_t = wrap_angle_rad(float(self.q[2]) + dt * omega)
-        x = float(self.q[0]) + dt * v * math.cos(theta_t)
-        y = float(self.q[1]) + dt * v * math.sin(theta_t)
-        hitch_rad = math.radians(float(hitch_deg_display))
-        theta_l = wrap_angle_rad(theta_t - hitch_rad)
-        self.q = np.array([x, y, theta_t, theta_l, v, omega], dtype=float)
-

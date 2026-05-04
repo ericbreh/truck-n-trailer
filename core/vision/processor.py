@@ -40,12 +40,7 @@ class VisionProcessor:
         self.reference_marker_corners_cache: dict[int, np.ndarray] = {}
         self.vision_q: Optional[np.ndarray] = None
         self.goal_xy: Optional[np.ndarray] = None
-        self.prev_vision_t: Optional[float] = None
-        self.prev_pivot_xy: Optional[np.ndarray] = None
-        self.prev_truck_heading: Optional[float] = None
         self.latest_hitch_vision_deg: Optional[float] = None
-        self.vel_ema_cm_s = 0.0
-        self.omega_ema_rad_s = 0.0
         self.axis_origin_px = None
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
@@ -97,11 +92,6 @@ class VisionProcessor:
         self.vision_q = None
         self.goal_xy = None
         self.latest_hitch_vision_deg = None
-        self.prev_vision_t = None
-        self.prev_pivot_xy = None
-        self.prev_truck_heading = None
-        self.vel_ema_cm_s = 0.0
-        self.omega_ema_rad_s = 0.0
         self.axis_origin_px = None
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
@@ -340,31 +330,13 @@ class VisionProcessor:
                                                 float(np.dot(trailer_fwd_world, y_hat)),
                                             ], dtype=float)
                                             theta_l = float(wrap_angle_rad(math.atan2(trailer_fwd_local[1], trailer_fwd_local[0])))
-                                            now = time.monotonic()
-                                            v_cm_s = 0.0
-                                            omega_rad_s = 0.0
-                                            if self.prev_vision_t is not None and self.prev_pivot_xy is not None and self.prev_truck_heading is not None:
-                                                dt = now - self.prev_vision_t
-                                                if 1e-3 < dt < 0.5:
-                                                    dxy = pivot_xy - self.prev_pivot_xy
-                                                    prev_theta = float(self.prev_truck_heading)
-                                                    v_raw = float((dxy[0] * math.cos(prev_theta) + dxy[1] * math.sin(prev_theta)) / dt)
-                                                    omega_raw = float(wrap_angle_rad(theta_t - prev_theta) / dt)
-                                                    alpha = 0.35
-                                                    self.vel_ema_cm_s = alpha * v_raw + (1.0 - alpha) * self.vel_ema_cm_s
-                                                    self.omega_ema_rad_s = alpha * omega_raw + (1.0 - alpha) * self.omega_ema_rad_s
-                                                    v_cm_s = self.vel_ema_cm_s
-                                                    omega_rad_s = self.omega_ema_rad_s
-                                            self.prev_vision_t = now
-                                            self.prev_pivot_xy = pivot_xy.copy()
-                                            self.prev_truck_heading = theta_t
                                             self.vision_q = np.array([
                                                 float(pivot_xy[0]),
                                                 float(pivot_xy[1]),
                                                 float(theta_t),
                                                 float(theta_l),
-                                                float(v_cm_s),
-                                                float(omega_rad_s),
+                                                0.0,
+                                                0.0,
                                             ], dtype=float)
                                         else:
                                             self.vision_q = None
@@ -462,31 +434,13 @@ class VisionProcessor:
                                                 back_offset_px = (params.MARKER_SIZE_CM * 0.5 + 4.0) * px_per_cm
                                                 pivot_px = truck_center_px - truck_fwd_px * back_offset_px
                                                 pivot_xy = _to_local_cm(pivot_px)
-                                                now = time.monotonic()
-                                                v_cm_s = 0.0
-                                                omega_rad_s = 0.0
-                                                if self.prev_vision_t is not None and self.prev_pivot_xy is not None and self.prev_truck_heading is not None:
-                                                    dt = now - self.prev_vision_t
-                                                    if 1e-3 < dt < 0.5:
-                                                        dxy = pivot_xy - self.prev_pivot_xy
-                                                        prev_theta = float(self.prev_truck_heading)
-                                                        v_raw = float((dxy[0] * math.cos(prev_theta) + dxy[1] * math.sin(prev_theta)) / dt)
-                                                        omega_raw = float(wrap_angle_rad(theta_t - prev_theta) / dt)
-                                                        alpha = 0.35
-                                                        self.vel_ema_cm_s = alpha * v_raw + (1.0 - alpha) * self.vel_ema_cm_s
-                                                        self.omega_ema_rad_s = alpha * omega_raw + (1.0 - alpha) * self.omega_ema_rad_s
-                                                        v_cm_s = self.vel_ema_cm_s
-                                                        omega_rad_s = self.omega_ema_rad_s
-                                                self.prev_vision_t = now
-                                                self.prev_pivot_xy = pivot_xy.copy()
-                                                self.prev_truck_heading = theta_t
                                                 self.vision_q = np.array([
                                                     float(pivot_xy[0]),
                                                     float(pivot_xy[1]),
                                                     float(theta_t),
                                                     float(theta_l),
-                                                    float(v_cm_s),
-                                                    float(omega_rad_s),
+                                                    0.0,
+                                                    0.0,
                                                 ], dtype=float)
                     except Exception:
                         hitch_vision_deg = None
