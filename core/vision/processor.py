@@ -296,7 +296,6 @@ class VisionProcessor:
                                 color=(255, 120, 0),
                                 marker_size_cm=params.MARKER_SIZE_CM,
                             )
-                            _overlay.draw_truck_pivot_x(view, corners, params.MARKER_SIZE_CM)
                     elif label == "trailer":
                         if _overlay is not None:
                             _overlay.draw_vehicle_box(

@@ -54,58 +54,6 @@ def draw_vehicle_box(
     cv2.polylines(frame, [box_px], isClosed=True, color=color, thickness=2)
 
 
-def draw_truck_pivot_x(frame, corners: np.ndarray, marker_size_cm: float) -> None:
-    if cv2 is None:
-        return
-    center_px = corners.mean(axis=0).astype(float)
-    top_mid = ((corners[0] + corners[1]) / 2.0).astype(float)
-    fwd = top_mid - center_px
-    norm = float(np.linalg.norm(fwd))
-    if norm < 1e-6:
-        return
-    fwd /= norm
-    back = -fwd
-
-    edge_lengths = [
-        np.linalg.norm(corners[1] - corners[0]),
-        np.linalg.norm(corners[2] - corners[1]),
-        np.linalg.norm(corners[3] - corners[2]),
-        np.linalg.norm(corners[0] - corners[3]),
-    ]
-    marker_side_px = float(np.mean(edge_lengths))
-    px_per_cm = marker_side_px / marker_size_cm
-
-    back_offset_px = (marker_size_cm * 0.5 + 4.0) * px_per_cm
-    pivot = center_px + back * back_offset_px
-    px, py = int(round(float(pivot[0]))), int(round(float(pivot[1])))
-    arm = max(10, int(round(1.2 * px_per_cm)))
-
-    cv2.line(frame, (px - arm, py - arm), (px + arm, py + arm), (0, 0, 0), 8, cv2.LINE_AA)
-    cv2.line(frame, (px - arm, py + arm), (px + arm, py - arm), (0, 0, 0), 8, cv2.LINE_AA)
-    cv2.line(frame, (px - arm, py - arm), (px + arm, py + arm), (0, 255, 255), 4, cv2.LINE_AA)
-    cv2.line(frame, (px - arm, py + arm), (px + arm, py - arm), (0, 255, 255), 4, cv2.LINE_AA)
-    cv2.putText(
-        frame,
-        "PIVOT",
-        (px + arm + 6, py - arm - 4),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 0, 0),
-        3,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        frame,
-        "PIVOT",
-        (px + arm + 6, py - arm - 4),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-
-
 def draw_parking_goal_marker(
     frame,
     u: int,
