@@ -8,7 +8,7 @@ from truck_n_trailer.kinematics import cm_s_to_rpm
 class BodyToWheels:
     wheel_track_cm: float = params.WHEEL_TRACK_CM
     wheel_radius_cm: float = params.WHEEL_RADIUS_CM
-    rpm_limit: float = 120.0
+    rpm_limit: float = 100.0
     invert_differential: bool = False
 
     # Internal velocity state — kept in sync with what we've commanded

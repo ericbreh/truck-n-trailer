@@ -20,7 +20,7 @@ class AutoController:
         self.wheels = BodyToWheels(
             wheel_track_cm=params.WHEEL_TRACK_CM,
             wheel_radius_cm=params.WHEEL_RADIUS_CM,
-            rpm_limit=120.0,
+            rpm_limit=100.0,
         )
         self.running = False
         self.q = self.mpc.cfg.q0.copy().astype(float)
