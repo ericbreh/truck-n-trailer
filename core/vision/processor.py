@@ -23,6 +23,8 @@ from truck_n_trailer.vision.config import (
 from truck_n_trailer.vision.detect import load_calibration, marker_pose_world, draw_world_plane
 from truck_n_trailer.vision import overlay as _overlay
 
+CAMERA_AUTO_SETTLE_SECONDS = 2.0
+
 
 class VisionProcessor:
     """Encapsulates all vision processing from app.py."""
@@ -48,6 +50,8 @@ class VisionProcessor:
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
         self.axis_px_per_cm: Optional[float] = None
+        self._lock_controls_at: Optional[float] = None
+        self._camera_controls_locked = False
 
     def connect(self, source) -> str:
         if cv2 is None:
@@ -66,7 +70,8 @@ class VisionProcessor:
         if cap is None:
             return "Camera: Failed to connect"
         self.cap = cap
-        self._apply_focus_lock(cap)
+        self._lock_controls_at = time.monotonic() + CAMERA_AUTO_SETTLE_SECONDS
+        self._camera_controls_locked = False
         self.frame_counter = 0
         self.reference_marker_corners_cache.clear()
         self._init_detector()
@@ -97,14 +102,34 @@ class VisionProcessor:
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
         self.axis_px_per_cm = None
+        self._lock_controls_at = None
+        self._camera_controls_locked = False
 
-    def _apply_focus_lock(self, cap):
+    def _lock_camera_controls(self) -> None:
+        if cv2 is None or self.cap is None:
+            return
+        cap = self.cap
         try:
+            focus = cap.get(cv2.CAP_PROP_FOCUS)
             cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            if focus > 0:
+                cap.set(cv2.CAP_PROP_FOCUS, focus)
         except Exception:
             pass
+
         try:
-            cap.set(cv2.CAP_PROP_FOCUS, 20)
+            wb = cap.get(cv2.CAP_PROP_WB_TEMPERATURE)
+            cap.set(cv2.CAP_PROP_AUTO_WB, 0)
+            if wb > 0:
+                cap.set(cv2.CAP_PROP_WB_TEMPERATURE, wb)
+        except Exception:
+            pass
+
+        # OpenCV backend values vary by platform; keep last observed exposure.
+        try:
+            exposure = cap.get(cv2.CAP_PROP_EXPOSURE)
+            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+            cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
         except Exception:
             pass
 
@@ -135,13 +160,18 @@ class VisionProcessor:
     def tick(self, pred_path_xy_cm: list | None = None):
         if cv2 is None or self.cap is None or self.detector is None:
             return None, None, None
+        if (
+            not self._camera_controls_locked
+            and self._lock_controls_at is not None
+            and time.monotonic() >= self._lock_controls_at
+        ):
+            self._lock_camera_controls()
+            self._camera_controls_locked = True
         ok, frame = self.cap.read()
         if not ok:
             self.disconnect()
             return None, None, None
         self.frame_counter += 1
-        if self.frame_counter % params.CAMERA_FOCUS_REFRESH_INTERVAL_FRAMES == 0:
-            self._apply_focus_lock(self.cap)
         view = frame
         if self.K is not None and self.dist is not None:
             try:
@@ -443,11 +473,27 @@ class VisionProcessor:
                     cv2.circle(view, tuple(center), 4, (0, 255, 255), -1)
                     if label == "truck":
                         if _overlay is not None:
-                            _overlay.draw_vehicle_box(view, corners, 0.0, front_extra_cm=7.0, rear_extra_cm=5.0, side_extra_cm=2.0, color=(255, 120, 0))
+                            _overlay.draw_vehicle_box(
+                                view,
+                                corners,
+                                front_extra_cm=7.0,
+                                rear_extra_cm=5.0,
+                                side_extra_cm=2.0,
+                                color=(255, 120, 0),
+                                marker_size_cm=params.MARKER_SIZE_CM,
+                            )
                             _overlay.draw_truck_pivot_x(view, corners, params.MARKER_SIZE_CM)
                     elif label == "trailer":
                         if _overlay is not None:
-                            _overlay.draw_vehicle_box(view, corners, 0.0, front_extra_cm=9.0, rear_extra_cm=7.0, side_extra_cm=2.0, color=(180, 0, 255))
+                            _overlay.draw_vehicle_box(
+                                view,
+                                corners,
+                                front_extra_cm=9.0,
+                                rear_extra_cm=7.0,
+                                side_extra_cm=2.0,
+                                color=(180, 0, 255),
+                                marker_size_cm=params.MARKER_SIZE_CM,
+                            )
                     if self.H is not None and marker_pose_world is not None:
                         try:
                             world_pos, heading = marker_pose_world(corners, self.H)
