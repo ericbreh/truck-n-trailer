@@ -527,6 +527,22 @@ class DashboardHeader(QWidget):
 
         font = painter.font()
         font.setFamily("Segoe UI")
+
+        # Calculate badge dimensions first
+        mode_colors = {"MANUAL": ("#1e3a5f", "#7dd3fc"), "AUTOMATIC": ("#14532d", "#4ade80")}
+        mbg, mfg = mode_colors.get(self._mode, ("#1e293b", "#94a3b8"))
+        badge_text = f"  {self._mode}  "
+        font.setPointSize(9)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
+        painter.setFont(font)
+        fm_badge = painter.fontMetrics()
+        bw = fm_badge.horizontalAdvance(badge_text) + 8
+
+        # Available width for subtitle (left of badge + padding)
+        avail_w = W - 22 - bw - 56
+
+        # Draw main title
         font.setPointSize(16)
         font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4.0)
@@ -536,36 +552,41 @@ class DashboardHeader(QWidget):
         painter.setPen(QPen(glow_color))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                painter.drawText(QRectF(20 + dx, dy, W, H),
+                painter.drawText(QRectF(20 + dx, dy, W - 20, H),
                                  Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
         painter.setPen(QPen(QColor("#e0f2fe")))
-        painter.drawText(QRectF(20, 0, W, H), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
+        painter.drawText(QRectF(20, 0, W - 20, H), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
 
+        # Draw subtitle - adjust font size to fit
         font.setPointSize(8)
         font.setBold(False)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
-        painter.setFont(font)
-        painter.setPen(QPen(QColor("#38bdf8")))
-        painter.drawText(QRectF(22, 26, W, H), Qt.AlignmentFlag.AlignVCenter, "AUTONOMOUS PARKING SYSTEM")
-
-        mode_colors = {"MANUAL": ("#1e3a5f", "#7dd3fc"), "AUTOMATIC": ("#14532d", "#4ade80")}
-        mbg, mfg = mode_colors.get(self._mode, ("#1e293b", "#94a3b8"))
-        badge_text = f"  {self._mode}  "
-        font.setPointSize(9)
-        font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
         painter.setFont(font)
         fm = painter.fontMetrics()
-        bw = fm.horizontalAdvance(badge_text) + 8
+        text = "AUTONOMOUS PARKING SYSTEM"
+        while fm.horizontalAdvance(text) > avail_w and font.pointSize() > 6:
+            font.setPointSize(font.pointSize() - 1)
+            painter.setFont(font)
+            fm = painter.fontMetrics()
+        painter.setPen(QPen(QColor("#38bdf8")))
+        painter.drawText(QRectF(22, 26, avail_w, H - 26),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+
+        # Draw mode badge
         bh = 22
         bx = W - bw - 56
         by = (H - bh) // 2
         painter.setBrush(QBrush(QColor(mbg)))
         painter.setPen(QPen(QColor(mfg), 1))
         painter.drawRoundedRect(QRectF(bx, by, bw, bh), 4, 4)
+        font.setPointSize(9)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
+        painter.setFont(font)
         painter.setPen(QPen(QColor(mfg)))
         painter.drawText(QRectF(bx, by, bw, bh), Qt.AlignmentFlag.AlignCenter, badge_text)
 
+        # Draw LED
         led_x = W - 22
         led_y = H // 2
         led_r = 6
