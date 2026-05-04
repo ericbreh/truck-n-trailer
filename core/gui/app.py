@@ -53,7 +53,7 @@ from truck_n_trailer.hitch_calibration import (
 )
 from truck_n_trailer.control import AutoController
 from truck_n_trailer.control.teleop import motion_to_rpms
-from truck_n_trailer.kinematics import avg_wheel_rpm_to_speed, integrate_distance_cm
+
 from truck_n_trailer.vision.processor import VisionProcessor
 from truck_n_trailer.uart import UartPacketSender, validate_sender_config
 
@@ -70,7 +70,6 @@ class TruckControlGui(QWidget):
 
         self.sender: UartPacketSender | None = None
         self.current_motion = "STOP"
-        self.manual_distance_cm = 0.0
         self.latest_hitch_raw_deg: float | None = None
         self.latest_hitch_display_deg = 0.0
         self.hitch_pot: HitchPotCalibration = default_hitch_calibration()
@@ -122,12 +121,10 @@ class TruckControlGui(QWidget):
         self.hitch_angle_gauge = HitchGauge("POT")
         self.hitch_vision_gauge = HitchGauge("VISION")
         self.calibrate_btn = QPushButton("Calibration")
-        self.manual_rpm_value = TelemetryCard("0.0", "RPM")
-        self.manual_speed_value = TelemetryCard("0.00", "Speed cm/s")
-        self.manual_distance_value = TelemetryCard("0.00", "Distance cm")
-        self.auto_rpm_value = TelemetryCard("0.0", "RPM")
-        self.auto_speed_value = TelemetryCard("0.00", "Speed cm/s")
-        self.auto_distance_value = TelemetryCard("0.00", "Distance cm")
+        self.manual_left_rpm = TelemetryCard("0.0", "Left RPM")
+        self.manual_right_rpm = TelemetryCard("0.0", "Right RPM")
+        self.auto_left_rpm = TelemetryCard("0.0", "Left RPM")
+        self.auto_right_rpm = TelemetryCard("0.0", "Right RPM")
 
         self.camera_source_box = QComboBox()
         self.camera_refresh_btn = QPushButton("Refresh")
@@ -211,9 +208,8 @@ class TruckControlGui(QWidget):
         manual_telemetry_group = QGroupBox("Telemetry")
         manual_telemetry_row = QHBoxLayout(manual_telemetry_group)
         manual_telemetry_row.setSpacing(6)
-        manual_telemetry_row.addWidget(self.manual_rpm_value)
-        manual_telemetry_row.addWidget(self.manual_speed_value)
-        manual_telemetry_row.addWidget(self.manual_distance_value)
+        manual_telemetry_row.addWidget(self.manual_left_rpm)
+        manual_telemetry_row.addWidget(self.manual_right_rpm)
         manual_layout.addWidget(manual_telemetry_group)
 
         drive_group = QGroupBox("Drive")
@@ -237,9 +233,8 @@ class TruckControlGui(QWidget):
         auto_telemetry_group = QGroupBox("Telemetry")
         auto_telemetry_row = QHBoxLayout(auto_telemetry_group)
         auto_telemetry_row.setSpacing(6)
-        auto_telemetry_row.addWidget(self.auto_rpm_value)
-        auto_telemetry_row.addWidget(self.auto_speed_value)
-        auto_telemetry_row.addWidget(self.auto_distance_value)
+        auto_telemetry_row.addWidget(self.auto_left_rpm)
+        auto_telemetry_row.addWidget(self.auto_right_rpm)
         auto_layout.addWidget(auto_telemetry_group)
 
         cam_group = QGroupBox("Camera Connection")
@@ -361,26 +356,16 @@ class TruckControlGui(QWidget):
         )
 
     def _reset_manual_stats(self) -> None:
-        self.manual_distance_cm = 0.0
-        self.manual_rpm_value.setText("0.0")
-        self.manual_speed_value.setText("0.00")
-        self.manual_distance_value.setText("0.00")
-        self.auto_rpm_value.setText("0.0")
-        self.auto_speed_value.setText("0.00")
-        self.auto_distance_value.setText("0.00")
+        self.manual_left_rpm.setText("0.0")
+        self.manual_right_rpm.setText("0.0")
+        self.auto_left_rpm.setText("0.0")
+        self.auto_right_rpm.setText("0.0")
 
     def _update_manual_stats(self, rpm_l: float, rpm_r: float) -> None:
-        avg_rpm, cm_s = avg_wheel_rpm_to_speed(rpm_l, rpm_r, params.WHEEL_RADIUS_CM)
-        self.manual_distance_cm = integrate_distance_cm(
-            self.manual_distance_cm, cm_s, 1.0 / params.DEFAULT_HZ
-        )
-
-        self.manual_rpm_value.setText(f"{avg_rpm:.1f}")
-        self.manual_speed_value.setText(f"{cm_s:.2f}")
-        self.manual_distance_value.setText(f"{self.manual_distance_cm:.2f}")
-        self.auto_rpm_value.setText(f"{avg_rpm:.1f}")
-        self.auto_speed_value.setText(f"{cm_s:.2f}")
-        self.auto_distance_value.setText(f"{self.manual_distance_cm:.2f}")
+        self.manual_left_rpm.setText(f"{rpm_l:.1f}")
+        self.manual_right_rpm.setText(f"{rpm_r:.1f}")
+        self.auto_left_rpm.setText(f"{rpm_l:.1f}")
+        self.auto_right_rpm.setText(f"{rpm_r:.1f}")
 
     def _is_manual_mode(self) -> bool:
         return self.mode_stack.currentIndex() == 0
