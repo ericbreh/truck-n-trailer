@@ -25,7 +25,7 @@ class AutoStateView(QWidget):
         self.path_points: list[tuple[float, float]] = []
         self.pred_path_xy: list[tuple[float, float]] = []
         self._pulse_t: float = 0.0
-        self.setMinimumSize(320, 280)
+        self.setMinimumSize(260, 200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._tick_pulse)
@@ -33,6 +33,10 @@ class AutoStateView(QWidget):
 
     def set_goal(self, q_goal: np.ndarray) -> None:
         self.goal_q = q_goal.copy()
+        self.update()
+
+    def clear_goal(self) -> None:
+        self.goal_q = None
         self.update()
 
     def reset_path(self, q_start: np.ndarray) -> None:
@@ -215,7 +219,14 @@ class AutoStateView(QWidget):
 
         body_w_px = max(self.truck_len_cm, self.trailer_len_cm) * 0.28 * scale
 
-        def draw_body_glowing(cx: float, cy: float, heading: float,
+        # World (x east, y north) is drawn with y flipped to screen coords. Long-axis
+        # rotation must map world heading to Qt painter rotation separately for each
+        # body: truck COM is *ahead* of the hitch along +heading, trailer COM is *behind*
+        # along +heading, so screen rotation from hitch→COM differs by a sign flip.
+        truck_rot_deg = math.degrees(math.atan2(math.sin(theta_t), -math.cos(theta_t)))
+        trailer_rot_deg = math.degrees(math.atan2(-math.sin(theta_l), math.cos(theta_l)))
+
+        def draw_body_glowing(cx: float, cy: float, rotation_deg: float,
                               length_cm: float, fill: QColor,
                               glow_rgb: tuple, label: str) -> None:
             half_l = length_cm * scale / 2.0
@@ -225,7 +236,7 @@ class AutoStateView(QWidget):
 
             painter.save()
             painter.translate(cx, cy)
-            painter.rotate(math.degrees(-heading))
+            painter.rotate(rotation_deg)
 
             for gw, ga in ((18, 12), (12, 30), (7, 60)):
                 painter.setPen(QPen(QColor(gr, gg, gb, ga), gw))
@@ -256,11 +267,11 @@ class AutoStateView(QWidget):
 
         (tmx, tmy), (trx, try_) = body_centers_cm(q, self.truck_len_cm, self.trailer_len_cm)
         t_px, t_py = to_px(tmx, tmy)
-        draw_body_glowing(t_px, t_py, theta_l, self.trailer_len_cm,
+        draw_body_glowing(t_px, t_py, trailer_rot_deg, self.trailer_len_cm,
                           QColor(88, 28, 200, 190), (167, 139, 250), "TRAILER")
 
         tr_px, tr_py = to_px(trx, try_)
-        draw_body_glowing(tr_px, tr_py, theta_t, self.truck_len_cm,
+        draw_body_glowing(tr_px, tr_py, truck_rot_deg, self.truck_len_cm,
                           QColor(154, 52, 18, 200), (251, 146, 60), "TRUCK")
 
         # ── speed vector ────────────────────────────────────────────────── #
@@ -421,17 +432,19 @@ class HitchGauge(QWidget):
 class TelemetryCard(QWidget):
     def __init__(self, initial_value: str = "---", label: str = "", parent=None):
         super().__init__(parent)
+        self.setFixedHeight(72)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(
             "background-color: #0b1322; border: 1px solid #1e3a5f; border-radius: 6px;"
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(2)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(0)
 
         self._value_label = QLabel(initial_value)
         self._value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._value_label.setStyleSheet(
-            "font-family: 'Courier New', 'Consolas', monospace; font-size: 26px; "
+            "font-family: 'Courier New', 'Consolas', monospace; font-size: 22px; "
             "color: #e2e8f0; background: transparent; border: none;"
         )
 
@@ -452,21 +465,24 @@ class TelemetryCard(QWidget):
 
 
 class StatusBadge(QLabel):
-    _STATES = {
-        "running":    ("#14532d", "#4ade80"),
-        "recovering": ("#713f12", "#fde047"),
-        "recovery":   ("#713f12", "#fde047"),
-        "finished":   ("#1e3a5f", "#60a5fa"),
-        "stopped":    ("#1e293b", "#94a3b8"),
-        "idle":       ("#1e293b", "#94a3b8"),
-        "fail":       ("#7f1d1d", "#f87171"),
-        "need":       ("#7f1d1d", "#f87171"),
-    }
-    _DEFAULT = ("#1e293b", "#94a3b8")
+    """Small status pill; colors derived from message keywords."""
+
+    _STATES = (
+        ("running", ("#14532d", "#bbf7d0")),
+        ("finished", ("#1e3a5f", "#93c5fd")),
+        ("recovering", ("#713f12", "#fde047")),
+        ("recovery", ("#713f12", "#fde047")),
+        ("stopped", ("#1e293b", "#94a3b8")),
+        ("idle", ("#7f1d1d", "#fecaca")),
+        ("fail", ("#7f1d1d", "#fca5a5")),
+        ("need", ("#7f1d1d", "#fecaca")),
+    )
+    _DEFAULT = ("#334155", "#cbd5e1")
 
     def __init__(self, text: str = "", parent=None):
         super().__init__(text, parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self._apply_state(text)
 
     def setText(self, text: str) -> None:
@@ -476,13 +492,13 @@ class StatusBadge(QLabel):
     def _apply_state(self, text: str) -> None:
         lower = text.lower()
         bg, fg = self._DEFAULT
-        for key, colors in self._STATES.items():
+        for key, colors in self._STATES:
             if key in lower:
                 bg, fg = colors
                 break
         self.setStyleSheet(
-            f"background-color: {bg}; color: {fg}; border-radius: 10px; "
-            f"padding: 4px 14px; font-weight: bold; font-size: 13px;"
+            f"background-color: {bg}; color: {fg}; border-radius: 5px; "
+            f"padding: 3px 10px; font-weight: 600; font-size: 11px;"
         )
 
 

@@ -122,6 +122,50 @@ def get_blue_stylesheet() -> str:
             background: #0ea5e9;
             border-color: #38bdf8;
         }
+        QPushButton#auto_start_btn {
+            background-color: #166534;
+            border: 1px solid #22c55e;
+            border-radius: 8px;
+            padding: 9px 22px;
+            min-width: 92px;
+            font-weight: 700;
+            font-size: 14px;
+            color: #ecfdf5;
+        }
+        QPushButton#auto_start_btn:hover {
+            background-color: #15803d;
+            border-color: #4ade80;
+            color: #ffffff;
+        }
+        QPushButton#auto_start_btn:pressed {
+            background-color: #14532d;
+            border-color: #22c55e;
+        }
+        QPushButton#auto_start_btn:disabled {
+            background-color: #1e293b;
+            border-color: #334155;
+            color: #64748b;
+        }
+        QPushButton#auto_stop_btn {
+            background-color: #111827;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 8px 16px;
+            min-width: 72px;
+            font-weight: 600;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+        QPushButton#auto_stop_btn:hover {
+            background-color: #1e293b;
+            border-color: #f87171;
+            color: #fecaca;
+        }
+        QPushButton#auto_stop_btn:pressed {
+            background-color: #450a0a;
+            border-color: #ef4444;
+            color: #fee2e2;
+        }
         QScrollBar:vertical {
             background: #111827;
             width: 8px;

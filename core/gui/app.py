@@ -112,7 +112,9 @@ class TruckControlGui(QWidget):
 
         self.mode_stack = QStackedWidget()
         self.auto_start_btn = QPushButton("Start")
+        self.auto_start_btn.setObjectName("auto_start_btn")
         self.auto_stop_btn = QPushButton("Stop")
+        self.auto_stop_btn.setObjectName("auto_stop_btn")
         self.auto_status_label = StatusBadge("MPC: Idle")
         self.auto_state_view = AutoStateView(
             truck_len_cm=params.TRUCK_LENGTH_CM,
@@ -133,7 +135,7 @@ class TruckControlGui(QWidget):
         self.camera_status_label = QLabel("Camera: Disconnected")
         self.camera_view = QLabel("No camera feed")
         self.camera_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_view.setMinimumSize(480, 320)
+        self.camera_view.setMinimumSize(560, 360)
         self.camera_view.setStyleSheet("background: #0f172a; border: 1px solid #475569;")
 
         self.send_timer = QTimer(self)
@@ -164,8 +166,8 @@ class TruckControlGui(QWidget):
 
         left_col = QVBoxLayout()
         right_col = QVBoxLayout()
-        root.addLayout(left_col, stretch=3)
-        root.addLayout(right_col, stretch=2)
+        root.addLayout(left_col, stretch=2)
+        root.addLayout(right_col, stretch=3)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode:"))
@@ -174,18 +176,14 @@ class TruckControlGui(QWidget):
         mode_row.addStretch()
         left_col.addLayout(mode_row)
 
-        conn_group = QGroupBox("Connection")
-        conn_form = QFormLayout()
-        conn_group.setLayout(conn_form)
-        conn_form.addRow("Port", self.port_box)
-
-        conn_buttons = QHBoxLayout()
-        conn_buttons.addWidget(self.refresh_btn)
-        conn_buttons.addWidget(self.connect_btn)
-        conn_buttons.addWidget(self.disconnect_btn)
-        conn_form.addRow(conn_buttons)
-
-        left_col.addWidget(conn_group)
+        uart_row = QHBoxLayout()
+        uart_row.setSpacing(6)
+        uart_row.addWidget(QLabel("UART"))
+        uart_row.addWidget(self.port_box, stretch=1)
+        uart_row.addWidget(self.refresh_btn)
+        uart_row.addWidget(self.connect_btn)
+        uart_row.addWidget(self.disconnect_btn)
+        left_col.addLayout(uart_row)
 
         hitch_group = QGroupBox("Hitch Angle")
         hitch_layout = QVBoxLayout(hitch_group)
@@ -206,11 +204,17 @@ class TruckControlGui(QWidget):
         manual_layout.addLayout(manual_form)
 
         manual_telemetry_group = QGroupBox("Telemetry")
+        manual_telemetry_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum,
+        )
+        manual_telemetry_group.setMaximumHeight(108)
         manual_telemetry_row = QHBoxLayout(manual_telemetry_group)
         manual_telemetry_row.setSpacing(6)
         manual_telemetry_row.addWidget(self.manual_left_rpm)
         manual_telemetry_row.addWidget(self.manual_right_rpm)
         manual_layout.addWidget(manual_telemetry_group)
+        manual_layout.addStretch(1)
 
         drive_group = QGroupBox("Drive")
         drive_grid = QGridLayout()
@@ -223,35 +227,47 @@ class TruckControlGui(QWidget):
 
         auto_page = QWidget()
         auto_layout = QVBoxLayout(auto_page)
-        auto_btns = QHBoxLayout()
-        auto_btns.addWidget(self.auto_start_btn)
-        auto_btns.addWidget(self.auto_stop_btn)
-        auto_layout.addLayout(auto_btns)
-        auto_layout.addWidget(self.auto_status_label)
-        auto_layout.addWidget(self.auto_state_view, stretch=1)
+        auto_ctrl_row = QHBoxLayout()
+        auto_ctrl_row.setSpacing(10)
+        auto_ctrl_row.addWidget(self.auto_start_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        auto_ctrl_row.addWidget(self.auto_stop_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        auto_ctrl_row.addStretch(1)
+        auto_ctrl_row.addWidget(
+            self.auto_status_label,
+            0,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+        )
+        auto_layout.addLayout(auto_ctrl_row)
 
         auto_telemetry_group = QGroupBox("Telemetry")
+        auto_telemetry_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum,
+        )
+        auto_telemetry_group.setMaximumHeight(108)
         auto_telemetry_row = QHBoxLayout(auto_telemetry_group)
         auto_telemetry_row.setSpacing(6)
         auto_telemetry_row.addWidget(self.auto_left_rpm)
         auto_telemetry_row.addWidget(self.auto_right_rpm)
         auto_layout.addWidget(auto_telemetry_group)
+        auto_layout.addStretch(1)
 
-        cam_group = QGroupBox("Camera Connection")
-        cam_form = QFormLayout(cam_group)
-        cam_form.addRow("Source", self.camera_source_box)
-        cam_buttons = QHBoxLayout()
-        cam_buttons.addWidget(self.camera_refresh_btn)
-        cam_buttons.addWidget(self.camera_connect_btn)
-        cam_buttons.addWidget(self.camera_disconnect_btn)
-        cam_form.addRow(cam_buttons)
+        cam_row = QHBoxLayout()
+        cam_row.setSpacing(6)
+        cam_row.addWidget(QLabel("Camera"))
+        cam_row.addWidget(self.camera_source_box, stretch=1)
+        cam_row.addWidget(self.camera_refresh_btn)
+        cam_row.addWidget(self.camera_connect_btn)
+        cam_row.addWidget(self.camera_disconnect_btn)
 
         self.mode_stack.addWidget(manual_page)
         self.mode_stack.addWidget(auto_page)
         left_col.addWidget(self.mode_stack, stretch=1)
-        right_col.addWidget(cam_group)
+        right_col.addLayout(cam_row)
         right_col.addWidget(self.camera_status_label)
-        right_col.addWidget(self.camera_view, stretch=1)
+        right_col.addWidget(self.camera_view, stretch=2)
+        self.auto_state_view.setMinimumHeight(200)
+        right_col.addWidget(self.auto_state_view, stretch=1)
 
     def _bind_controls(self) -> None:
         self.mode_group.idClicked.connect(self._on_mode_changed)
@@ -380,8 +396,6 @@ class TruckControlGui(QWidget):
             self._update_button_states()
         else:
             self._set_motion("STOP")
-            self.auto_state_view.set_goal(self.auto.mpc.cfg.q_des)
-            self.auto_state_view.reset_path(self.auto.q)
             self.auto_status_label.setText("MPC: Idle")
             self._update_button_states()
 
@@ -464,13 +478,13 @@ class TruckControlGui(QWidget):
         self._set_camera_connected(False)
 
     def _tick_camera(self) -> None:
-        if self._is_manual_mode():
-            pred_for_cam = None
-        elif self.auto.running:
+        if self.auto.running:
             pred_for_cam = self.auto.pred_path_xy_cm
-        else:
+        elif self.vision.vision_q is not None and self.vision.goal_xy is not None:
             self.auto.preview_parking_path(self.vision.vision_q, self.vision.goal_xy)
             pred_for_cam = self.auto.preview_pred_path_xy_cm
+        else:
+            pred_for_cam = None
         result = self.vision.tick(pred_for_cam)
         if result is None:
             return
@@ -490,7 +504,7 @@ class TruckControlGui(QWidget):
             )
             self.camera_view.setPixmap(pixmap)
 
-        if not self._is_manual_mode() and self.vision.vision_q is not None:
+        if self.vision.vision_q is not None:
             vq = self.vision.vision_q
             if self.vision.goal_xy is not None:
                 g = self.vision.goal_xy
@@ -507,6 +521,8 @@ class TruckControlGui(QWidget):
                         dtype=float,
                     )
                 )
+            else:
+                self.auto_state_view.clear_goal()
             if self.auto.running:
                 self.auto_state_view.set_state(vq)
                 self.auto_state_view.set_pred_path(
