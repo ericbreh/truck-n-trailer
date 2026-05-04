@@ -154,6 +154,83 @@ def draw_workspace_box(
     cv2.polylines(frame, [poly_int], isClosed=True, color=(255, 180, 0), thickness=3)
 
 
+def draw_parking_goal_marker(
+    frame,
+    u: int,
+    v: int,
+    *,
+    color: tuple[int, int, int] = (0, 255, 120),
+) -> None:
+    if cv2 is None:
+        return
+    cv2.drawMarker(
+        frame,
+        (u, v),
+        color,
+        markerType=cv2.MARKER_CROSS,
+        markerSize=22,
+        thickness=2,
+        line_type=cv2.LINE_AA,
+    )
+    cv2.circle(frame, (u, v), 10, color, 2, cv2.LINE_AA)
+
+
+def _dotted_polyline_px(frame, path_px: list[np.ndarray], color: tuple[int, int, int]) -> None:
+    if cv2 is None or len(path_px) < 2:
+        return
+
+    def _dotted_segment(p0: np.ndarray, p1: np.ndarray) -> None:
+        vec = p1 - p0
+        dist = float(np.linalg.norm(vec))
+        if dist < 1e-6:
+            return
+        direction = vec / dist
+        on_px, off_px, pos = 8.0, 6.0, 0.0
+        while pos < dist:
+            seg_start = p0 + direction * pos
+            seg_end = p0 + direction * min(dist, pos + on_px)
+            cv2.line(
+                frame,
+                (int(round(float(seg_start[0]))), int(round(float(seg_start[1])))),
+                (int(round(float(seg_end[0]))), int(round(float(seg_end[1])))),
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+            pos += on_px + off_px
+
+    for i in range(len(path_px) - 1):
+        _dotted_segment(path_px[i], path_px[i + 1])
+
+
+def draw_local_path_homography(
+    frame,
+    pred_xy_cm: list,
+    origin_world: np.ndarray,
+    ex_world: np.ndarray,
+    ey_world: np.ndarray,
+    H_inv: np.ndarray,
+) -> None:
+    """Map local cm path (same frame as vision_q x,y) to pixels via world + inverse homography."""
+    if cv2 is None:
+        return
+    if len(pred_xy_cm) < 2:
+        return
+    ow = origin_world.astype(np.float32)
+    ex = ex_world.astype(np.float32)
+    ey = ey_world.astype(np.float32)
+    path_px: list[np.ndarray] = []
+    for p in pred_xy_cm:
+        gx = float(ow[0] + float(p[0]) * float(ex[0]) + float(p[1]) * float(ey[0]))
+        gy = float(ow[1] + float(p[0]) * float(ex[1]) + float(p[1]) * float(ey[1]))
+        pt = cv2.perspectiveTransform(
+            np.array([[[gx, gy]]], dtype=np.float32),
+            H_inv,
+        )[0][0]
+        path_px.append(pt.astype(np.float64))
+    _dotted_polyline_px(frame, path_px, (0, 255, 255))
+
+
 def draw_prediction_path(
     frame,
     pred_xy_cm: list,
@@ -178,26 +255,4 @@ def draw_prediction_path(
         origin_px + x_hat_px * (float(p[0]) * px_per_cm) + y_hat_px * (float(p[1]) * px_per_cm)
         for p in pred_xy_cm
     ]
-
-    def _dotted_segment(p0: np.ndarray, p1: np.ndarray) -> None:
-        vec = p1 - p0
-        dist = float(np.linalg.norm(vec))
-        if dist < 1e-6:
-            return
-        direction = vec / dist
-        on_px, off_px, pos = 8.0, 6.0, 0.0
-        while pos < dist:
-            seg_start = p0 + direction * pos
-            seg_end = p0 + direction * min(dist, pos + on_px)
-            cv2.line(
-                frame,
-                (int(round(float(seg_start[0]))), int(round(float(seg_start[1])))),
-                (int(round(float(seg_end[0]))), int(round(float(seg_end[1])))),
-                (0, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
-            pos += on_px + off_px
-
-    for i in range(len(path_px) - 1):
-        _dotted_segment(path_px[i], path_px[i + 1])
+    _dotted_polyline_px(frame, path_px, (0, 255, 255))

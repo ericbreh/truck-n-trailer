@@ -1,5 +1,6 @@
 """Automatic MPC control for truck-trailer system."""
 
+import math
 from typing import Optional, Tuple
 
 import numpy as np
@@ -34,6 +35,7 @@ class AutoController:
         self.vel_ema_cm_s = 0.0
         self.omega_ema_rad_s = 0.0
         self.pred_path_xy_cm: list[np.ndarray] = []
+        self.preview_pred_path_xy_cm: list[np.ndarray] = []
 
     def _build_mpc(self) -> TruckTrailerMPC:
         return TruckTrailerMPC(make_mpc_config())
@@ -51,6 +53,7 @@ class AutoController:
         self.vel_ema_cm_s = 0.0
         self.omega_ema_rad_s = 0.0
         self.pred_path_xy_cm = []
+        self.preview_pred_path_xy_cm = []
 
     def reached_goal(self) -> bool:
         cfg = self.mpc.cfg
@@ -58,6 +61,59 @@ class AutoController:
         ang_t = abs(wrap_angle_rad(float(self.q[2] - cfg.q_des[2])))
         ang_l = abs(wrap_angle_rad(float(self.q[3] - cfg.q_des[3])))
         return pos_err <= cfg.target_tol and ang_t <= cfg.angle_tol and ang_l <= cfg.angle_tol
+
+    def preview_parking_path(
+        self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray]
+    ) -> None:
+        """Compute MPC horizon path for overlay without running auto or mutating q/u_guess."""
+        self.preview_pred_path_xy_cm = []
+        if vision_q is None or goal_xy is None:
+            return
+        saved_q_des = self.mpc.cfg.q_des.copy()
+        try:
+            q = vision_q.copy()
+            q_des = saved_q_des.copy()
+            q_des[0] = float(goal_xy[0])
+            q_des[1] = float(goal_xy[1])
+            q_des[2] = float(q[2])
+            q_des[3] = float(q[3])
+            q_des[4] = 0.0
+            q_des[5] = 0.0
+            self.mpc.cfg.q_des = q_des
+
+            cfg = self.mpc.cfg
+            pos_err = float(np.linalg.norm(q[:2] - q_des[:2]))
+            ang_t = abs(wrap_angle_rad(float(q[2] - q_des[2])))
+            ang_l = abs(wrap_angle_rad(float(q[3] - q_des[3])))
+            if (
+                pos_err <= cfg.target_tol
+                and ang_t <= cfg.angle_tol
+                and ang_l <= cfg.angle_tol
+            ):
+                return
+
+            u_guess = np.zeros((2, cfg.N), dtype=float)
+            if float(q[4]) <= cfg.v_min + 1e-6:
+                u_guess[0, :] = np.maximum(u_guess[0, :], 0.0)
+            elif float(q[4]) >= cfg.v_max - 1e-6:
+                u_guess[0, :] = np.minimum(u_guess[0, :], 0.0)
+
+            u_opt = self.mpc.solve(q, u_guess)
+            if u_opt is None:
+                retry_guess = np.zeros_like(u_guess)
+                u_opt = self.mpc.solve(q, retry_guess)
+            if u_opt is None:
+                return
+
+            pred_steps = max(1, min(u_opt.shape[1], int(round(3.0 / cfg.dt))))
+            q_pred = q.copy()
+            pred_xy_cm = [q_pred[:2].copy()]
+            for k in range(pred_steps):
+                q_pred = discrete_step(q_pred, u_opt[:, k], cfg.dt, cfg.d)
+                pred_xy_cm.append(q_pred[:2].copy())
+            self.preview_pred_path_xy_cm = pred_xy_cm
+        finally:
+            self.mpc.cfg.q_des = saved_q_des
 
     def tick(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray]) -> Tuple[float, float]:
         if not self.running or vision_q is None or goal_xy is None:
@@ -123,6 +179,7 @@ class AutoController:
         self.running = False
         self.wheels.reset(v=0.0, omega=0.0)
         self.pred_path_xy_cm = []
+        self.preview_pred_path_xy_cm = []
 
     def update_state_from_measurements(self, motor_rpms: Tuple[float, float], hitch_deg_display: float) -> None:
         cfg = self.mpc.cfg

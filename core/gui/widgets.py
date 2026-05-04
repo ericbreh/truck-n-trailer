@@ -68,6 +68,9 @@ class AutoStateView(QWidget):
         if self.goal_q is not None:
             xs.extend([float(self.goal_q[0])])
             ys.extend([float(self.goal_q[1])])
+        for x, y in self.pred_path_xy:
+            xs.append(float(x))
+            ys.append(float(y))
         if not xs:
             return 0.0, 1.0, 0.0, 1.0
 

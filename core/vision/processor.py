@@ -50,6 +50,10 @@ class VisionProcessor:
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
         self.axis_px_per_cm: Optional[float] = None
+        self.goal_screen_px: Optional[tuple[int, int]] = None
+        self.path_map_origin_world: Optional[np.ndarray] = None
+        self.path_map_ex_world: Optional[np.ndarray] = None
+        self.path_map_ey_world: Optional[np.ndarray] = None
         self._lock_controls_at: Optional[float] = None
         self._camera_controls_locked = False
 
@@ -102,6 +106,10 @@ class VisionProcessor:
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
         self.axis_px_per_cm = None
+        self.goal_screen_px = None
+        self.path_map_origin_world = None
+        self.path_map_ex_world = None
+        self.path_map_ey_world = None
         self._lock_controls_at = None
         self._camera_controls_locked = False
 
@@ -191,6 +199,9 @@ class VisionProcessor:
             except Exception:
                 corners_list, ids = None, None
             if ids is not None:
+                self.path_map_origin_world = None
+                self.path_map_ex_world = None
+                self.path_map_ey_world = None
                 id_to_corners = {int(ids[i][0]): corners_list[i][0] for i in range(len(ids))}
                 required_ref_ids = (10, 11, 12, 13)
                 for marker_id in required_ref_ids:
@@ -245,6 +256,9 @@ class VisionProcessor:
                                     self.axis_y_hat_px = y_hat.astype(float)
                                     self.axis_x_hat_px = x_hat.astype(float)
                                     self.axis_px_per_cm = None
+                                    self.path_map_origin_world = origin.astype(float)
+                                    self.path_map_ex_world = x_hat.astype(float)
+                                    self.path_map_ey_world = y_hat.astype(float)
                                     ref_ids = (10, 11, 12, 13)
                                     if all(mid in box_id_to_corners for mid in ref_ids):
                                         r_tl = box_id_to_corners[10][2].astype(np.float32)
@@ -273,6 +287,21 @@ class VisionProcessor:
                                             float(np.dot(rel_goal, x_hat)),
                                             float(np.dot(rel_goal, y_hat)),
                                         ], dtype=float)
+                                        if self.H_inv is not None:
+                                            try:
+                                                gpt = cv2.perspectiveTransform(
+                                                    np.array(
+                                                        [[[float(box_center_world[0]), float(box_center_world[1])]]],
+                                                        dtype=np.float32,
+                                                    ),
+                                                    self.H_inv,
+                                                )[0][0]
+                                                self.goal_screen_px = (
+                                                    int(round(float(gpt[0]))),
+                                                    int(round(float(gpt[1]))),
+                                                )
+                                            except Exception:
+                                                self.goal_screen_px = None
                                     truck_center_world = np.array(truck_pos_world, dtype=float)
                                     trailer_center_world = np.array(trailer_pos_world, dtype=float)
                                     truck_center_px = truck_corners.mean(axis=0).astype(np.float32)
@@ -410,6 +439,10 @@ class VisionProcessor:
                                                 in_bl = p_bl + inset_side_px * _unit(p_br - p_bl) - extend_vertical_px * _unit(p_tl - p_bl)
                                                 box_center_px = np.array([in_tl, in_tr, in_br, in_bl], dtype=float).mean(axis=0)
                                                 self.goal_xy = _to_local_cm(box_center_px)
+                                                self.goal_screen_px = (
+                                                    int(round(float(box_center_px[0]))),
+                                                    int(round(float(box_center_px[1]))),
+                                                )
                                             truck_center_px = truck_corners.mean(axis=0).astype(float)
                                             truck_top_mid_px = ((truck_corners[0] + truck_corners[1]) / 2.0).astype(float)
                                             trailer_center_px = trailer_corners.mean(axis=0).astype(float)
@@ -509,10 +542,38 @@ class VisionProcessor:
                 self.axis_x_hat_px = None
                 self.axis_y_hat_px = None
                 self.axis_px_per_cm = None
+                self.path_map_origin_world = None
+                self.path_map_ex_world = None
+                self.path_map_ey_world = None
         self.latest_hitch_vision_deg = hitch_vision_deg
         if _overlay is not None:
             path = pred_path_xy_cm if pred_path_xy_cm is not None else []
-            _overlay.draw_prediction_path(
-                view, path, self.axis_origin_px, self.axis_x_hat_px, self.axis_y_hat_px, self.axis_px_per_cm
-            )
+            if len(path) >= 2:
+                if (
+                    self.path_map_origin_world is not None
+                    and self.path_map_ex_world is not None
+                    and self.path_map_ey_world is not None
+                    and self.H_inv is not None
+                ):
+                    _overlay.draw_local_path_homography(
+                        view,
+                        path,
+                        self.path_map_origin_world,
+                        self.path_map_ex_world,
+                        self.path_map_ey_world,
+                        self.H_inv,
+                    )
+                else:
+                    _overlay.draw_prediction_path(
+                        view,
+                        path,
+                        self.axis_origin_px,
+                        self.axis_x_hat_px,
+                        self.axis_y_hat_px,
+                        self.axis_px_per_cm,
+                    )
+            if self.goal_screen_px is not None:
+                _overlay.draw_parking_goal_marker(
+                    view, self.goal_screen_px[0], self.goal_screen_px[1]
+                )
         return view, found_count, hitch_vision_deg

@@ -11,6 +11,8 @@ if __package__ is None or __package__ == "":
 import argparse
 import time
 
+import numpy as np
+
 try:
     import cv2
 except ImportError:  # pragma: no cover
@@ -477,8 +479,14 @@ class TruckControlGui(QWidget):
         self._set_camera_connected(False)
 
     def _tick_camera(self) -> None:
-        pred = self.auto.pred_path_xy_cm if self.auto.running else None
-        result = self.vision.tick(pred)
+        if self._is_manual_mode():
+            pred_for_cam = None
+        elif self.auto.running:
+            pred_for_cam = self.auto.pred_path_xy_cm
+        else:
+            self.auto.preview_parking_path(self.vision.vision_q, self.vision.goal_xy)
+            pred_for_cam = self.auto.preview_pred_path_xy_cm
+        result = self.vision.tick(pred_for_cam)
         if result is None:
             return
         view, found_count, hitch_deg = result
@@ -497,11 +505,36 @@ class TruckControlGui(QWidget):
             )
             self.camera_view.setPixmap(pixmap)
 
-        if self.auto.running and self.vision.vision_q is not None:
-            self.auto_state_view.set_state(self.vision.vision_q)
-            self.auto_state_view.set_pred_path(
-                [(float(p[0]), float(p[1])) for p in self.auto.pred_path_xy_cm]
-            )
+        if not self._is_manual_mode() and self.vision.vision_q is not None:
+            vq = self.vision.vision_q
+            if self.vision.goal_xy is not None:
+                g = self.vision.goal_xy
+                self.auto_state_view.set_goal(
+                    np.array(
+                        [
+                            float(g[0]),
+                            float(g[1]),
+                            float(vq[2]),
+                            float(vq[3]),
+                            0.0,
+                            0.0,
+                        ],
+                        dtype=float,
+                    )
+                )
+            if self.auto.running:
+                self.auto_state_view.set_state(vq)
+                self.auto_state_view.set_pred_path(
+                    [(float(p[0]), float(p[1])) for p in self.auto.pred_path_xy_cm]
+                )
+            else:
+                self.auto_state_view.reset_path(vq)
+                self.auto_state_view.set_pred_path(
+                    [
+                        (float(p[0]), float(p[1]))
+                        for p in self.auto.preview_pred_path_xy_cm
+                    ]
+                )
 
     def _set_motion(self, motion: str) -> None:
         self.current_motion = motion
