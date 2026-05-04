@@ -1,6 +1,5 @@
 """Automatic MPC control for truck-trailer system."""
 
-import math
 from typing import Optional, Tuple
 
 import numpy as np
@@ -8,7 +7,8 @@ import numpy as np
 from truck_n_trailer import params
 from truck_n_trailer.kinematics import cm_s_to_rpm, rpm_to_cm_s, wrap_angle_rad
 from truck_n_trailer.control.body_to_wheels import BodyToWheels
-from truck_n_trailer.control.mpc import MPCConfig, TruckTrailerMPC
+from truck_n_trailer.control.mpc import TruckTrailerMPC
+from truck_n_trailer.control.mpc_config import make_mpc_config
 from truck_n_trailer.control.simulation import discrete_step
 
 
@@ -37,30 +37,7 @@ class AutoController:
         self.pred_path_xy_cm: list[np.ndarray] = []
 
     def _build_mpc(self) -> TruckTrailerMPC:
-        q0 = np.array([20.0, 155.0, params.START_YAW_RAD, params.START_YAW_RAD, 0.0, 0.0], dtype=float)
-        q_des = np.array([20.0, 20.0, params.START_YAW_RAD, params.START_YAW_RAD, 0.0, 0.0], dtype=float)
-        cfg = MPCConfig(
-            L=params.TRUCK_LENGTH_CM,
-            d=params.TRAILER_LENGTH_CM,
-            dt=1.0 / params.DEFAULT_HZ,
-            N=30,
-            max_steps=500,
-            target_tol=2.0,
-            angle_tol=0.15,
-            a_min=-10.0,
-            a_max=10.0,
-            v_min=-20.0,
-            v_max=20.0,
-            max_jackknife_angle=math.radians(45.0),
-            q0=q0,
-            q_des=q_des,
-            w_theta_t=20.0,
-            w_theta_l=40.0,
-            w_v=15.0,
-            w_omega=15.0,
-            w_pos_stage=0.05,
-        )
-        return TruckTrailerMPC(cfg)
+        return TruckTrailerMPC(make_mpc_config())
 
     def reset_state(self) -> None:
         self.q = self.mpc.cfg.q0.copy().astype(float)

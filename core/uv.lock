@@ -632,7 +632,7 @@ wheels = [
 ]
 
 [[package]]
-name = "truck-trailer"
+name = "truck-n-trailer"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

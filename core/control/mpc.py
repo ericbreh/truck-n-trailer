@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -8,45 +8,36 @@ import pyomo.environ as pyo
 
 @dataclass
 class MPCConfig:
-    # Vehicle parameters
-    L: float = 1.0
-    d: float = 1.0
+    """MPC problem data — construct only via :mod:`truck_n_trailer.control.mpc_config` factories."""
 
-    # Simulation settings
-    dt: float = 0.1
-    N: int = 50
-    max_steps: int = 500
-    target_tol: float = 0.05
-    angle_tol: float = 0.1
-
-    # State and control bounds
-    a_min: float = -1.5
-    a_max: float = 1.5
-    alpha_min: float = -0.8
-    alpha_max: float = 0.8
-    v_min: float = -2.0
-    v_max: float = 2.0
-    omega_min: float = -0.6
-    omega_max: float = 0.6
-    max_jackknife_angle: float = math.pi / 4.0
-
-    # Costs
-    w_pos: float = 1.0
-    w_theta_t: float = 10.0
-    w_theta_l: float = 100.0
-    w_v: float = 10.0
-    w_omega: float = 10.0
-    w_pos_stage: float = 0
-    w_a: float = 0.1
-    w_alpha: float = 0.1
-
-    # Initial and desired states
-    q0: np.ndarray = field(default_factory=lambda: np.array([2, 4, 1.57, 1.57, 0, 0]))
-    q_des: np.ndarray = field(default_factory=lambda: np.array([0, 0, 0, 0, 0, 0]))
-
-    # Solver settings
-    solver_max_iter: int = 600
-    solver_tol: float = 1e-6
+    L: float
+    d: float
+    dt: float
+    N: int
+    max_steps: int
+    target_tol: float
+    angle_tol: float
+    a_min: float
+    a_max: float
+    alpha_min: float
+    alpha_max: float
+    v_min: float
+    v_max: float
+    omega_min: float
+    omega_max: float
+    max_jackknife_angle: float
+    w_pos: float
+    w_theta_t: float
+    w_theta_l: float
+    w_v: float
+    w_omega: float
+    w_pos_stage: float
+    w_a: float
+    w_alpha: float
+    q0: np.ndarray
+    q_des: np.ndarray
+    solver_max_iter: int
+    solver_tol: float
 
 
 class TruckTrailerMPC:

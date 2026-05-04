@@ -10,6 +10,7 @@ import numpy as np
 from truck_n_trailer.kinematics import wrap_angle_rad
 
 from .mpc import MPCConfig, TruckTrailerMPC
+from .mpc_config import make_mpc_config
 
 
 def dynamics(q: np.ndarray, u: np.ndarray, d: float) -> np.ndarray:
@@ -90,12 +91,13 @@ def animate_result(q_hist: np.ndarray, cfg: MPCConfig) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
+    ax.set_xlabel("x (cm)")
+    ax.set_ylabel("y (cm)")
 
     all_x = np.r_[q_hist[:, 0], cfg.q_des[0]]
     all_y = np.r_[q_hist[:, 1], cfg.q_des[1]]
-    pad = 1.5
+    span = max(float(np.max(all_x) - np.min(all_x)), float(np.max(all_y) - np.min(all_y)), 1.0)
+    pad = max(8.0, 0.05 * span)
     ax.set_xlim(np.min(all_x) - pad, np.max(all_x) + pad)
     ax.set_ylim(np.min(all_y) - pad, np.max(all_y) + pad)
     ax.plot(cfg.q_des[0], cfg.q_des[1], "rx", markersize=10, mew=2, label="target")
@@ -140,7 +142,7 @@ def animate_result(q_hist: np.ndarray, cfg: MPCConfig) -> None:
 
 
 def main() -> None:
-    cfg = MPCConfig(q0=np.array([2, 4, 1.57, 1.57, 0, 0]), q_des=np.array([0, 0, 0, 0, 0, 0]), max_steps=200, N=50)
+    cfg = make_mpc_config()
     mpc = TruckTrailerMPC(cfg)
 
     q_hist, _u_hist = run_simulation(cfg, mpc)
@@ -150,7 +152,7 @@ def main() -> None:
     final_ang_l = abs(wrap_angle_rad(float(q_hist[-1, 3] - cfg.q_des[3])))
 
     print(f"Closed-loop steps: {len(q_hist) - 1}")
-    print(f"Final pos error: {final_err:.3f} m")
+    print(f"Final pos error: {final_err:.3f} cm")
     print(f"Final ang error (truck): {final_ang_t:.3f} rad")
     print(f"Final ang error (trailer): {final_ang_l:.3f} rad")
 
