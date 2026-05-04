@@ -585,18 +585,8 @@ class TruckControlGui(QWidget):
 
         if self.mode_stack.currentIndex() == 1:
             if self.auto.running:
-                self.auto.check_jackknife(self.latest_hitch_display_deg, self.vision.latest_hitch_vision_deg)
-                if self.auto.hitch_recovery_active:
-                    rpm_l, rpm_r = self.auto.car_like_recovery_rpms(self.latest_hitch_display_deg)
-                    self.auto_status_label.setText(
-                        f"MPC: Jackknife recovery ({self.latest_hitch_display_deg:.1f} deg)"
-                    )
-                else:
-                    rpm_l, rpm_r = self.auto.tick(
-                        self.vision.vision_q, self.vision.goal_xy, self.latest_hitch_display_deg
-                    )
-                    rpm_l, rpm_r = self.auto.boost_rpms(rpm_l, rpm_r)
-                    self.auto_status_label.setText("MPC: Running")
+                rpm_l, rpm_r = self.auto.tick(self.vision.vision_q, self.vision.goal_xy)
+                self.auto_status_label.setText("MPC: Running")
                 if self.auto.reached_goal():
                     self.auto.stop()
                     self.auto_status_label.setText("MPC: Finished")

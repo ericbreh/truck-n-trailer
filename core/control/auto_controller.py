@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 from truck_n_trailer import params
-from truck_n_trailer.kinematics import cm_s_to_rpm, rpm_to_cm_s, wrap_angle_rad
+from truck_n_trailer.kinematics import rpm_to_cm_s, wrap_angle_rad
 from truck_n_trailer.control.body_to_wheels import BodyToWheels
 from truck_n_trailer.control.mpc import TruckTrailerMPC
 from truck_n_trailer.control.mpc_config import make_mpc_config
@@ -26,7 +26,6 @@ class AutoController:
         self.q = self.mpc.cfg.q0.copy().astype(float)
         self.u_guess = np.zeros((2, self.mpc.cfg.N), dtype=float)
         self.solver_fail_count = 0
-        self.hitch_recovery_active = False
         self.last_meas_rpms: Optional[Tuple[float, float]] = None
         self.last_meas_hitch_deg: Optional[float] = None
         self.prev_vision_t: Optional[float] = None
@@ -44,7 +43,6 @@ class AutoController:
         self.u_guess = np.zeros((2, self.mpc.cfg.N), dtype=float)
         self.wheels.reset(v=float(self.q[4]), omega=float(self.q[5]))
         self.solver_fail_count = 0
-        self.hitch_recovery_active = False
         self.last_meas_rpms = None
         self.last_meas_hitch_deg = None
         self.prev_vision_t = None
@@ -61,7 +59,7 @@ class AutoController:
         ang_l = abs(wrap_angle_rad(float(self.q[3] - cfg.q_des[3])))
         return pos_err <= cfg.target_tol and ang_t <= cfg.angle_tol and ang_l <= cfg.angle_tol
 
-    def tick(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray], hitch_deg: float) -> Tuple[float, float]:
+    def tick(self, vision_q: Optional[np.ndarray], goal_xy: Optional[np.ndarray]) -> Tuple[float, float]:
         if not self.running or vision_q is None or goal_xy is None:
             return 0.0, 0.0
 
@@ -123,7 +121,6 @@ class AutoController:
 
     def stop(self) -> None:
         self.running = False
-        self.hitch_recovery_active = False
         self.wheels.reset(v=0.0, omega=0.0)
         self.pred_path_xy_cm = []
 
@@ -142,29 +139,3 @@ class AutoController:
         theta_l = wrap_angle_rad(theta_t - hitch_rad)
         self.q = np.array([x, y, theta_t, theta_l, v, omega], dtype=float)
 
-    def car_like_recovery_rpms(self, hitch_display_deg: float) -> Tuple[float, float]:
-        base_v = -rpm_to_cm_s(params.HITCH_RECOVERY_RPM, params.WHEEL_RADIUS_CM)
-        desired_omega = -1.0 if hitch_display_deg > 0.0 else 1.0
-        max_omega = (2.0 * abs(base_v) / params.WHEEL_TRACK_CM) * 0.9
-        omega = desired_omega * max_omega
-        v_l = float(base_v) - (float(omega) * params.WHEEL_TRACK_CM) / 2.0
-        v_r = float(base_v) + (float(omega) * params.WHEEL_TRACK_CM) / 2.0
-        rpm_l = cm_s_to_rpm(v_l, params.WHEEL_RADIUS_CM)
-        rpm_r = cm_s_to_rpm(v_r, params.WHEEL_RADIUS_CM)
-        return rpm_l, rpm_r
-
-    def boost_rpms(self, rpm_l: float, rpm_r: float) -> Tuple[float, float]:
-        peak = max(abs(rpm_l), abs(rpm_r))
-        if peak < 1e-6:
-            return 0.0, 0.0
-        if peak >= params.MIN_EFFECTIVE_RPM:
-            return rpm_l, rpm_r
-        scale = params.MIN_EFFECTIVE_RPM / peak
-        return rpm_l * scale, rpm_r * scale
-
-    def check_jackknife(self, hitch_display_deg: float, hitch_vision_deg: Optional[float]) -> None:
-        hitch_abs = abs(hitch_vision_deg) if hitch_vision_deg is not None else 0.0
-        if self.hitch_recovery_active and hitch_abs <= params.HITCH_RELEASE_DEG:
-            self.hitch_recovery_active = False
-        if not self.hitch_recovery_active and hitch_abs > params.HITCH_HARD_LIMIT_DEG:
-            self.hitch_recovery_active = True
