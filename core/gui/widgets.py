@@ -2,6 +2,9 @@ import math
 
 import numpy as np
 
+from truck_n_trailer import params
+from truck_n_trailer.geometry import body_centers_cm
+
 try:
     from PyQt6.QtCore import Qt, QPointF, QRectF, QSize, QTimer
     from PyQt6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPen, QPolygonF
@@ -152,7 +155,7 @@ class AutoStateView(QWidget):
             gy += grid_step
 
         # ── workspace boundary ───────────────────────────────────────────── #
-        ws_w, ws_h = 100.0, 100.0
+        ws_w, ws_h = params.WORKSPACE_WIDTH_CM, params.WORKSPACE_HEIGHT_CM
         ws_corners = [(0.0, 0.0), (ws_w, 0.0), (ws_w, ws_h), (0.0, ws_h)]
         ws_px = [to_px(cx, cy) for cx, cy in ws_corners]
         ws_pen = QPen(QColor(56, 189, 248, 30), 1)
@@ -248,14 +251,11 @@ class AutoStateView(QWidget):
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
             painter.restore()
 
-        tmx = x - (self.trailer_len_cm / 2.0) * math.cos(theta_l)
-        tmy = y - (self.trailer_len_cm / 2.0) * math.sin(theta_l)
+        (tmx, tmy), (trx, try_) = body_centers_cm(q, self.truck_len_cm, self.trailer_len_cm)
         t_px, t_py = to_px(tmx, tmy)
         draw_body_glowing(t_px, t_py, theta_l, self.trailer_len_cm,
                           QColor(88, 28, 200, 190), (167, 139, 250), "TRAILER")
 
-        trx = x + (self.truck_len_cm / 2.0) * math.cos(theta_t)
-        try_ = y + (self.truck_len_cm / 2.0) * math.sin(theta_t)
         tr_px, tr_py = to_px(trx, try_)
         draw_body_glowing(tr_px, tr_py, theta_t, self.truck_len_cm,
                           QColor(154, 52, 18, 200), (251, 146, 60), "TRUCK")

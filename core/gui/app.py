@@ -9,10 +9,12 @@ if __package__ is None or __package__ == "":
     __package__ = "truck_n_trailer.gui"
 
 import argparse
-import math
 import time
 
-import numpy as np
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
 
 try:
     from PyQt6.QtCore import Qt, QTimer
@@ -38,34 +40,20 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("PyQt6 is required. Install with: pip install PyQt6") from exc
 
-from .constants import (
-    DEFAULT_BAUD, DEFAULT_HZ,
-    AUTO_WHEEL_RADIUS_CM, AUTO_WHEEL_TRACK_CM,
-    AUTO_TRUCK_LENGTH_CM, AUTO_TRAILER_LENGTH_CM,
-    AUTO_START_YAW_RAD,
-    AUTO_HITCH_HARD_LIMIT_DEG, AUTO_HITCH_RELEASE_DEG,
-    AUTO_HITCH_RECOVERY_RPM, AUTO_MIN_EFFECTIVE_RPM,
-    HITCH_REAL_ZERO, HITCH_REAL_NEG_WORKING, HITCH_REAL_POS_WORKING,
-    HITCH_MEAS_ZERO, HITCH_MEAS_NEG_WORKING, HITCH_MEAS_POS_WORKING,
-    CAMERA_FOCUS_RELOCK_FRAMES,
-)
 from .widgets import AutoStateView, HitchGauge, TelemetryCard, StatusBadge, DashboardHeader
 from .stylesheet import get_blue_stylesheet
+from truck_n_trailer import params
+from truck_n_trailer.hitch_calibration import (
+    HitchPotCalibration,
+    default_hitch_calibration,
+    fit_hitch_calibration,
+    hitch_calibration_prompts,
+)
 from truck_n_trailer.control import AutoController
+from truck_n_trailer.control.teleop import motion_to_rpms
+from truck_n_trailer.kinematics import avg_wheel_rpm_to_speed, integrate_distance_cm
 from truck_n_trailer.vision.processor import VisionProcessor
 from truck_n_trailer.uart import UartPacketSender, validate_sender_config
-
-
-def motion_targets(motion: str, base_rpm: float) -> tuple[float, float]:
-    if motion == "FORWARD":
-        return base_rpm, base_rpm
-    if motion == "BACK":
-        return -base_rpm, -base_rpm
-    if motion == "LEFT":
-        return -base_rpm, base_rpm
-    if motion == "RIGHT":
-        return base_rpm, -base_rpm
-    return 0.0, 0.0
 
 
 class TruckControlGui(QWidget):
@@ -83,9 +71,7 @@ class TruckControlGui(QWidget):
         self.manual_distance_cm = 0.0
         self.latest_hitch_raw_deg: float | None = None
         self.latest_hitch_display_deg = 0.0
-        self.hitch_meas_neg_working = HITCH_MEAS_NEG_WORKING
-        self.hitch_meas_zero = HITCH_MEAS_ZERO
-        self.hitch_meas_pos_working = HITCH_MEAS_POS_WORKING
+        self.hitch_pot: HitchPotCalibration = default_hitch_calibration()
 
         # Controllers
         self.vision = VisionProcessor()
@@ -128,8 +114,8 @@ class TruckControlGui(QWidget):
         self.auto_stop_btn = QPushButton("Stop")
         self.auto_status_label = StatusBadge("MPC: Idle")
         self.auto_state_view = AutoStateView(
-            truck_len_cm=AUTO_TRUCK_LENGTH_CM,
-            trailer_len_cm=AUTO_TRAILER_LENGTH_CM,
+            truck_len_cm=params.TRUCK_LENGTH_CM,
+            trailer_len_cm=params.TRAILER_LENGTH_CM,
         )
         self.hitch_angle_gauge = HitchGauge("POT")
         self.hitch_vision_gauge = HitchGauge("VISION")
@@ -296,22 +282,8 @@ class TruckControlGui(QWidget):
     def _update_speed_label(self, value: int) -> None:
         self.speed_value.setText(f"{value} RPM")
 
-    def _linearize_hitch_output(self, angle_deg: float) -> float:
-        a = float(angle_deg)
-        if a <= self.hitch_meas_zero:
-            denom = self.hitch_meas_neg_working - self.hitch_meas_zero
-            if abs(denom) < 1e-9:
-                return a
-            t = (a - self.hitch_meas_zero) / denom
-            return HITCH_REAL_ZERO + t * (HITCH_REAL_NEG_WORKING - HITCH_REAL_ZERO)
-        denom = self.hitch_meas_pos_working - self.hitch_meas_zero
-        if abs(denom) < 1e-9:
-            return a
-        t = (a - self.hitch_meas_zero) / denom
-        return HITCH_REAL_ZERO + t * (HITCH_REAL_POS_WORKING - HITCH_REAL_ZERO)
-
     def _update_hitch_angle_display(self, raw_adc: float) -> None:
-        corrected = self._linearize_hitch_output(raw_adc)
+        corrected = self.hitch_pot.raw_to_physical_deg(raw_adc)
         clamped = max(-180.0, min(180.0, float(corrected)))
         self.latest_hitch_display_deg = clamped
         self.hitch_angle_gauge.setValue(clamped)
@@ -342,23 +314,8 @@ class TruckControlGui(QWidget):
             QMessageBox.warning(self, "Calibration", "Connect to the ESP first.")
             return
 
-        steps = [
-            (
-                f"Move hitch to {HITCH_REAL_NEG_WORKING:+.1f} deg "
-                "(truck rotated clockwise/right relative to trailer), then click OK."
-            ),
-            f"Move hitch to {HITCH_REAL_ZERO:+.1f} deg, then click OK.",
-            (
-                f"Move hitch to {HITCH_REAL_POS_WORKING:+.1f} deg "
-                "(truck rotated counterclockwise/left relative to trailer), then click OK."
-            ),
-            (
-                f"Move hitch back to {HITCH_REAL_ZERO:+.1f} deg, then click OK. "
-                "This second zero reading is used to reduce hysteresis."
-            ),
-        ]
         captured: list[float] = []
-        for message in steps:
+        for message in hitch_calibration_prompts():
             response = QMessageBox.question(
                 self,
                 "Calibration",
@@ -378,8 +335,9 @@ class TruckControlGui(QWidget):
             captured.append(measured)
 
         neg, zero_first, pos, zero_return = captured
-        zero = 0.5 * (zero_first + zero_return)
-        if not (neg < zero < pos):
+        try:
+            self.hitch_pot = fit_hitch_calibration(neg, zero_first, pos, zero_return)
+        except ValueError:
             QMessageBox.warning(
                 self,
                 "Calibration",
@@ -387,10 +345,7 @@ class TruckControlGui(QWidget):
             )
             return
 
-        self.hitch_meas_neg_working = neg
-        self.hitch_meas_zero = zero
-        self.hitch_meas_pos_working = pos
-
+        zero = self.hitch_pot.meas_zero
         if self.latest_hitch_raw_deg is not None:
             self._update_hitch_angle_display(self.latest_hitch_raw_deg)
         QMessageBox.information(
@@ -413,9 +368,10 @@ class TruckControlGui(QWidget):
         self.auto_distance_value.setText("0.00")
 
     def _update_manual_stats(self, rpm_l: float, rpm_r: float) -> None:
-        avg_rpm = (float(rpm_l) + float(rpm_r)) * 0.5
-        cm_s = (avg_rpm * (2.0 * math.pi * AUTO_WHEEL_RADIUS_CM)) / 60.0
-        self.manual_distance_cm += abs(cm_s) * (1.0 / DEFAULT_HZ)
+        avg_rpm, cm_s = avg_wheel_rpm_to_speed(rpm_l, rpm_r, params.WHEEL_RADIUS_CM)
+        self.manual_distance_cm = integrate_distance_cm(
+            self.manual_distance_cm, cm_s, 1.0 / params.DEFAULT_HZ
+        )
 
         self.manual_rpm_value.setText(f"{avg_rpm:.1f}")
         self.manual_speed_value.setText(f"{cm_s:.2f}")
@@ -521,14 +477,15 @@ class TruckControlGui(QWidget):
         self._set_camera_connected(False)
 
     def _tick_camera(self) -> None:
-        result = self.vision.tick()
+        pred = self.auto.pred_path_xy_cm if self.auto.running else None
+        result = self.vision.tick(pred)
         if result is None:
             return
         view, found_count, hitch_deg = result
         self._update_hitch_vision_display(hitch_deg)
         self.camera_status_label.setText(f"Camera: Connected | Markers: {found_count}")
 
-        if view is not None:
+        if view is not None and cv2 is not None:
             rgb = cv2.cvtColor(view, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
             bytes_per_line = ch * w
@@ -543,7 +500,7 @@ class TruckControlGui(QWidget):
         if self.auto.running and self.vision.vision_q is not None:
             self.auto_state_view.set_state(self.vision.vision_q)
             self.auto_state_view.set_pred_path(
-                [(float(p[0]), float(p[1])) for p in self.vision.pred_path_xy_cm]
+                [(float(p[0]), float(p[1])) for p in self.auto.pred_path_xy_cm]
             )
 
     def _set_motion(self, motion: str) -> None:
@@ -564,8 +521,8 @@ class TruckControlGui(QWidget):
 
         try:
             port, _rpm = self._read_settings()
-            validate_sender_config(hz=DEFAULT_HZ)
-            sender = UartPacketSender(port=port, baud=DEFAULT_BAUD)
+            validate_sender_config(hz=params.DEFAULT_HZ)
+            sender = UartPacketSender(port=port, baud=params.DEFAULT_BAUD)
             sender.connect()
         except Exception:
             return
@@ -575,7 +532,7 @@ class TruckControlGui(QWidget):
         self._reset_manual_stats()
         self._set_connected(True)
 
-        interval_ms = max(1, int(1000.0 / DEFAULT_HZ))
+        interval_ms = max(1, int(1000.0 / params.DEFAULT_HZ))
         self.send_timer.start(interval_ms)
         self.setFocus()
 
@@ -648,7 +605,7 @@ class TruckControlGui(QWidget):
                 rpm_l, rpm_r = 0.0, 0.0
         else:
             base_rpm = float(self.speed_slider.value())
-            rpm_l, rpm_r = motion_targets(self.current_motion, base_rpm)
+            rpm_l, rpm_r = motion_to_rpms(self.current_motion, base_rpm)
         try:
             sender.send_targets(rpm_l, rpm_r)
         except Exception:

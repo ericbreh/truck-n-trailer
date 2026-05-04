@@ -1,0 +1,38 @@
+"""Physical defaults and shared tuning constants (single source of truth)."""
+
+import math
+
+DEFAULT_BAUD = 115200
+DEFAULT_HZ = 10.0
+
+WHEEL_DIAMETER_CM = 6.0
+WHEEL_RADIUS_CM = WHEEL_DIAMETER_CM / 2.0
+WHEEL_TRACK_CM = 10.0
+
+TRUCK_LENGTH_CM = 17.0
+TRAILER_LENGTH_CM = 22.0
+START_YAW_RAD = math.pi / 2.0
+
+HITCH_HARD_LIMIT_DEG = 45.0
+HITCH_RELEASE_DEG = 42.0
+HITCH_RECOVERY_RPM = 25.0
+MIN_EFFECTIVE_RPM = 60.0
+
+# Reference hitch angles (physical, deg) for POT calibration prompts
+HITCH_REAL_ZERO = 0.0
+HITCH_REAL_NEG_WORKING = -55.5
+HITCH_REAL_POS_WORKING = 55.5
+
+# Default POT samples before user calibration (raw units from firmware)
+HITCH_MEAS_ZERO = 2048.0
+HITCH_MEAS_NEG_WORKING = 1024.0
+HITCH_MEAS_POS_WORKING = 3072.0
+
+MARKER_SIZE_CM = 5.3
+WORKSPACE_BOX_SIDE_INSET_CM = 2.0
+WORKSPACE_BOX_VERTICAL_EXTEND_CM = 5.0
+WORKSPACE_WIDTH_CM = 100.0
+WORKSPACE_HEIGHT_CM = 100.0
+
+# Re-apply OpenCV focus periodically while streaming
+CAMERA_FOCUS_REFRESH_INTERVAL_FRAMES = 100

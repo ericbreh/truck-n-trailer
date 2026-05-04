@@ -22,6 +22,3 @@ REFERENCE_MARKER_IDS = {
     13: "ref bottom-left",
 }
 
-# Real-world positions of the reference marker CENTERS in cm.
-WORKSPACE_WIDTH_CM = 100.0
-WORKSPACE_HEIGHT_CM = 100.0

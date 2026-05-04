@@ -7,16 +7,14 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
 
+from truck_n_trailer.kinematics import wrap_angle_rad
+
 from .mpc import MPCConfig, TruckTrailerMPC
 
 
-def wrap_angle(a: float) -> float:
-    return math.atan2(math.sin(a), math.cos(a))
-
-
 def dynamics(q: np.ndarray, u: np.ndarray, d: float) -> np.ndarray:
-    x, y, theta_t, theta_l, v, omega = q
-    a, alpha = u
+    x, y, theta_t, theta_l, v, omega = [float(v) for v in q]
+    a, alpha = float(u[0]), float(u[1])
     return np.array(
         [
             v * math.cos(theta_t),
@@ -30,6 +28,16 @@ def dynamics(q: np.ndarray, u: np.ndarray, d: float) -> np.ndarray:
     )
 
 
+def discrete_step(q: np.ndarray, u: np.ndarray, dt: float, d: float) -> np.ndarray:
+    """Explicit Euler step; same dynamics as MPC plant model."""
+    qf = q.astype(float)
+    uf = u.astype(float)
+    q_next = qf + dt * dynamics(qf, uf, d)
+    q_next[2] = wrap_angle_rad(float(q_next[2]))
+    q_next[3] = wrap_angle_rad(float(q_next[3]))
+    return q_next
+
+
 def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np.ndarray]:
     q = cfg.q0.copy().astype(float)
     u_guess = np.zeros((2, cfg.N), dtype=float)
@@ -39,8 +47,8 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
 
     for step in range(cfg.max_steps):
         pos_err = float(np.linalg.norm(q[:2] - cfg.q_des[:2]))
-        ang_err_t = abs(wrap_angle(q[2] - cfg.q_des[2]))
-        ang_err_l = abs(wrap_angle(q[3] - cfg.q_des[3]))
+        ang_err_t = abs(wrap_angle_rad(float(q[2] - cfg.q_des[2])))
+        ang_err_l = abs(wrap_angle_rad(float(q[3] - cfg.q_des[3])))
 
         if pos_err <= cfg.target_tol and ang_err_t <= cfg.angle_tol and ang_err_l <= cfg.angle_tol:
             break
@@ -54,8 +62,8 @@ def run_simulation(cfg: MPCConfig, mpc: TruckTrailerMPC) -> tuple[np.ndarray, np
 
         u0 = u_opt[:, 0]
         q = q + cfg.dt * dynamics(q, u0, cfg.d)
-        q[2] = wrap_angle(q[2])
-        q[3] = wrap_angle(q[3])
+        q[2] = wrap_angle_rad(float(q[2]))
+        q[3] = wrap_angle_rad(float(q[3]))
 
         q_hist.append(q.copy())
         u_hist.append(u0.copy())
@@ -138,8 +146,8 @@ def main() -> None:
     q_hist, _u_hist = run_simulation(cfg, mpc)
 
     final_err = float(np.linalg.norm(q_hist[-1, :2] - cfg.q_des[:2]))
-    final_ang_t = abs(wrap_angle(q_hist[-1, 2] - cfg.q_des[2]))
-    final_ang_l = abs(wrap_angle(q_hist[-1, 3] - cfg.q_des[3]))
+    final_ang_t = abs(wrap_angle_rad(float(q_hist[-1, 2] - cfg.q_des[2])))
+    final_ang_l = abs(wrap_angle_rad(float(q_hist[-1, 3] - cfg.q_des[3])))
 
     print(f"Closed-loop steps: {len(q_hist) - 1}")
     print(f"Final pos error: {final_err:.3f} m")

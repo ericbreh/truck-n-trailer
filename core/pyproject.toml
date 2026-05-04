@@ -16,7 +16,12 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["truck_n_trailer", "truck_n_trailer.gui", "truck_n_trailer.vision", "truck_n_trailer.control", "truck_n_trailer.parking"]
+packages = [
+    "truck_n_trailer",
+    "truck_n_trailer.gui",
+    "truck_n_trailer.vision",
+    "truck_n_trailer.control",
+]
 
 [project.scripts]
 truck-n-trailer-gui = "truck_n_trailer.gui.app:main"

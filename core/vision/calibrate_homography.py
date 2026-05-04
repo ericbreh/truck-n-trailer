@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from truck_n_trailer import params
 from truck_n_trailer.vision.camera import open_configured_camera
 from truck_n_trailer.vision.config import (
     CAMERA_PARAMS_PATH,
@@ -7,15 +8,13 @@ from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     ARUCO_PARAMS,
     REFERENCE_MARKER_IDS,
-    WORKSPACE_WIDTH_CM,
-    WORKSPACE_HEIGHT_CM,
 )
 
 REFERENCE_WORLD_COORDS_CM = {
     10: (0.0,               0.0),
-    11: (WORKSPACE_WIDTH_CM, 0.0),
-    12: (WORKSPACE_WIDTH_CM, WORKSPACE_HEIGHT_CM),
-    13: (0.0,               WORKSPACE_HEIGHT_CM),
+    11: (params.WORKSPACE_WIDTH_CM, 0.0),
+    12: (params.WORKSPACE_WIDTH_CM, params.WORKSPACE_HEIGHT_CM),
+    13: (0.0,               params.WORKSPACE_HEIGHT_CM),
 }
 
 

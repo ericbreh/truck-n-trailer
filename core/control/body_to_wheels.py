@@ -34,6 +34,8 @@ running.
 import math
 from dataclasses import dataclass
 
+from truck_n_trailer.kinematics import cm_s_to_rpm
+
 
 @dataclass
 class BodyToWheels:
@@ -102,10 +104,8 @@ class BodyToWheels:
             v_l = self._v - (o * w) / 2.0
             v_r = self._v + (o * w) / 2.0
 
-        # Convert cm/s → RPM:  RPM = (v / circumference) * 60
-        circumference = 2.0 * math.pi * self.wheel_radius_cm
-        rpm_l = (v_l / circumference) * 60.0
-        rpm_r = (v_r / circumference) * 60.0
+        rpm_l = cm_s_to_rpm(v_l, self.wheel_radius_cm)
+        rpm_r = cm_s_to_rpm(v_r, self.wheel_radius_cm)
 
         # Hard clamp — never send the firmware an impossible target
         rpm_l = max(-self.rpm_limit, min(self.rpm_limit, rpm_l))

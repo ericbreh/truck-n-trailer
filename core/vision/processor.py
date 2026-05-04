@@ -1,5 +1,6 @@
 """Vision processing for truck-trailer state estimation."""
 
+import math
 import time
 from typing import Optional
 
@@ -10,15 +11,14 @@ try:
 except ImportError:
     cv2 = None
 
+from truck_n_trailer import params
+from truck_n_trailer.kinematics import wrap_angle_rad
 from truck_n_trailer.vision.camera import open_configured_camera
 from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     ARUCO_PARAMS,
     TRACKING_MARKER_IDS,
     REFERENCE_MARKER_IDS,
-    MARKER_SIZE_CM,
-    WORKSPACE_BOX_SIDE_INSET_CM,
-    WORKSPACE_BOX_VERTICAL_EXTEND_CM,
 )
 from truck_n_trailer.vision.detect import load_calibration, marker_pose_world, draw_world_plane
 from truck_n_trailer.vision import overlay as _overlay
@@ -44,7 +44,6 @@ class VisionProcessor:
         self.latest_hitch_vision_deg: Optional[float] = None
         self.vel_ema_cm_s = 0.0
         self.omega_ema_rad_s = 0.0
-        self.pred_path_xy_cm: list[np.ndarray] = []
         self.axis_origin_px = None
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
@@ -94,7 +93,6 @@ class VisionProcessor:
         self.prev_truck_heading = None
         self.vel_ema_cm_s = 0.0
         self.omega_ema_rad_s = 0.0
-        self.pred_path_xy_cm = []
         self.axis_origin_px = None
         self.axis_x_hat_px = None
         self.axis_y_hat_px = None
@@ -134,7 +132,7 @@ class VisionProcessor:
         except Exception:
             pass
 
-    def tick(self):
+    def tick(self, pred_path_xy_cm: list | None = None):
         if cv2 is None or self.cap is None or self.detector is None:
             return None, None, None
         ok, frame = self.cap.read()
@@ -142,7 +140,7 @@ class VisionProcessor:
             self.disconnect()
             return None, None, None
         self.frame_counter += 1
-        if self.frame_counter % 100 == 0:
+        if self.frame_counter % params.CAMERA_FOCUS_REFRESH_INTERVAL_FRAMES == 0:
             self._apply_focus_lock(self.cap)
         view = frame
         if self.K is not None and self.dist is not None:
@@ -187,7 +185,7 @@ class VisionProcessor:
                         float(np.linalg.norm(c[0] - c[3])),
                     ])
                 if ref_px_lengths:
-                    self.axis_px_per_cm = (sum(ref_px_lengths) / len(ref_px_lengths)) / MARKER_SIZE_CM
+                    self.axis_px_per_cm = (sum(ref_px_lengths) / len(ref_px_lengths)) / params.MARKER_SIZE_CM
                 else:
                     self.axis_px_per_cm = None
                 truck_corners = id_to_corners.get(0)
@@ -197,7 +195,7 @@ class VisionProcessor:
                         if self.H is not None and marker_pose_world is not None:
                             truck_pos_world, truck_heading_world = marker_pose_world(truck_corners, self.H)
                             trailer_pos_world, trailer_heading_world = marker_pose_world(trailer_corners, self.H)
-                            hitch_vision_deg = float(np.degrees(self._wrap_angle(float(truck_heading_world - trailer_heading_world))))
+                            hitch_vision_deg = float(np.degrees(wrap_angle_rad(float(truck_heading_world - trailer_heading_world))))
                             axis_tr = box_id_to_corners.get(11)
                             axis_br = box_id_to_corners.get(12)
                             if axis_tr is not None and axis_br is not None:
@@ -232,8 +230,8 @@ class VisionProcessor:
                                                 return np.zeros(2, dtype=np.float32)
                                             return (v / n).astype(np.float32)
 
-                                        inset_side = WORKSPACE_BOX_SIDE_INSET_CM
-                                        extend_vertical = WORKSPACE_BOX_VERTICAL_EXTEND_CM
+                                        inset_side = params.WORKSPACE_BOX_SIDE_INSET_CM
+                                        extend_vertical = params.WORKSPACE_BOX_VERTICAL_EXTEND_CM
                                         w_tl, w_tr, w_br, w_bl = ref_poly_world
                                         in_tl = w_tl + inset_side * _unit(w_tr - w_tl) - extend_vertical * _unit(w_bl - w_tl)
                                         in_tr = w_tr + inset_side * _unit(w_tl - w_tr) - extend_vertical * _unit(w_br - w_tr)
@@ -257,7 +255,7 @@ class VisionProcessor:
                                     truck_fwd_norm = float(np.linalg.norm(truck_fwd_world))
                                     if truck_fwd_norm > 1e-6:
                                         truck_fwd_world /= truck_fwd_norm
-                                        back_offset_cm = MARKER_SIZE_CM * 0.5 + 4.0
+                                        back_offset_cm = params.MARKER_SIZE_CM * 0.5 + 4.0
                                         pivot_world = truck_center_world - truck_fwd_world * back_offset_cm
                                         rel_pivot = pivot_world - origin
                                         pivot_xy = np.array([
@@ -268,7 +266,7 @@ class VisionProcessor:
                                             float(np.dot(truck_fwd_world, x_hat)),
                                             float(np.dot(truck_fwd_world, y_hat)),
                                         ], dtype=float)
-                                        theta_t = float(self._wrap_angle(math.atan2(truck_fwd_local[1], truck_fwd_local[0])))
+                                        theta_t = float(wrap_angle_rad(math.atan2(truck_fwd_local[1], truck_fwd_local[0])))
                                         trailer_top_mid_px = ((trailer_corners[0] + trailer_corners[1]) / 2.0).astype(np.float32)
                                         trailer_pts_world = cv2.perspectiveTransform(
                                             np.array([[trailer_center_world.astype(np.float32), trailer_top_mid_px]], dtype=np.float32),
@@ -282,7 +280,7 @@ class VisionProcessor:
                                                 float(np.dot(trailer_fwd_world, x_hat)),
                                                 float(np.dot(trailer_fwd_world, y_hat)),
                                             ], dtype=float)
-                                            theta_l = float(self._wrap_angle(math.atan2(trailer_fwd_local[1], trailer_fwd_local[0])))
+                                            theta_l = float(wrap_angle_rad(math.atan2(trailer_fwd_local[1], trailer_fwd_local[0])))
                                             now = time.monotonic()
                                             v_cm_s = 0.0
                                             omega_rad_s = 0.0
@@ -292,7 +290,7 @@ class VisionProcessor:
                                                     dxy = pivot_xy - self.prev_pivot_xy
                                                     prev_theta = float(self.prev_truck_heading)
                                                     v_raw = float((dxy[0] * math.cos(prev_theta) + dxy[1] * math.sin(prev_theta)) / dt)
-                                                    omega_raw = float(self._wrap_angle(theta_t - prev_theta) / dt)
+                                                    omega_raw = float(wrap_angle_rad(theta_t - prev_theta) / dt)
                                                     alpha = 0.35
                                                     self.vel_ema_cm_s = alpha * v_raw + (1.0 - alpha) * self.vel_ema_cm_s
                                                     self.omega_ema_rad_s = alpha * omega_raw + (1.0 - alpha) * self.omega_ema_rad_s
@@ -337,7 +335,7 @@ class VisionProcessor:
                                 if not px_lengths:
                                     self.vision_q = None
                                 else:
-                                    px_per_cm = (sum(px_lengths) / len(px_lengths)) / MARKER_SIZE_CM
+                                    px_per_cm = (sum(px_lengths) / len(px_lengths)) / params.MARKER_SIZE_CM
                                     if px_per_cm <= 1e-6:
                                         self.vision_q = None
                                     else:
@@ -374,8 +372,8 @@ class VisionProcessor:
                                                 p_tr = box_id_to_corners[11][3].astype(float)
                                                 p_br = box_id_to_corners[12][0].astype(float)
                                                 p_bl = box_id_to_corners[13][1].astype(float)
-                                                inset_side_px = WORKSPACE_BOX_SIDE_INSET_CM * px_per_cm
-                                                extend_vertical_px = WORKSPACE_BOX_VERTICAL_EXTEND_CM * px_per_cm
+                                                inset_side_px = params.WORKSPACE_BOX_SIDE_INSET_CM * px_per_cm
+                                                extend_vertical_px = params.WORKSPACE_BOX_VERTICAL_EXTEND_CM * px_per_cm
                                                 in_tl = p_tl + inset_side_px * _unit(p_tr - p_tl) - extend_vertical_px * _unit(p_bl - p_tl)
                                                 in_tr = p_tr + inset_side_px * _unit(p_tl - p_tr) - extend_vertical_px * _unit(p_br - p_tr)
                                                 in_br = p_br + inset_side_px * _unit(p_bl - p_br) - extend_vertical_px * _unit(p_tr - p_br)
@@ -395,10 +393,10 @@ class VisionProcessor:
                                             else:
                                                 truck_fwd_px /= tn
                                                 trailer_fwd_px /= ln
-                                                theta_t = float(self._wrap_angle(math.atan2(float(np.dot(truck_fwd_px, y_hat_px)), float(np.dot(truck_fwd_px, x_hat_px)))))
-                                                theta_l = float(self._wrap_angle(math.atan2(float(np.dot(trailer_fwd_px, y_hat_px)), float(np.dot(trailer_fwd_px, x_hat_px)))))
-                                                hitch_vision_deg = float(np.degrees(self._wrap_angle(theta_t - theta_l)))
-                                                back_offset_px = (MARKER_SIZE_CM * 0.5 + 4.0) * px_per_cm
+                                                theta_t = float(wrap_angle_rad(math.atan2(float(np.dot(truck_fwd_px, y_hat_px)), float(np.dot(truck_fwd_px, x_hat_px)))))
+                                                theta_l = float(wrap_angle_rad(math.atan2(float(np.dot(trailer_fwd_px, y_hat_px)), float(np.dot(trailer_fwd_px, x_hat_px)))))
+                                                hitch_vision_deg = float(np.degrees(wrap_angle_rad(theta_t - theta_l)))
+                                                back_offset_px = (params.MARKER_SIZE_CM * 0.5 + 4.0) * px_per_cm
                                                 pivot_px = truck_center_px - truck_fwd_px * back_offset_px
                                                 pivot_xy = _to_local_cm(pivot_px)
                                                 now = time.monotonic()
@@ -410,7 +408,7 @@ class VisionProcessor:
                                                         dxy = pivot_xy - self.prev_pivot_xy
                                                         prev_theta = float(self.prev_truck_heading)
                                                         v_raw = float((dxy[0] * math.cos(prev_theta) + dxy[1] * math.sin(prev_theta)) / dt)
-                                                        omega_raw = float(self._wrap_angle(theta_t - prev_theta) / dt)
+                                                        omega_raw = float(wrap_angle_rad(theta_t - prev_theta) / dt)
                                                         alpha = 0.35
                                                         self.vel_ema_cm_s = alpha * v_raw + (1.0 - alpha) * self.vel_ema_cm_s
                                                         self.omega_ema_rad_s = alpha * omega_raw + (1.0 - alpha) * self.omega_ema_rad_s
@@ -446,7 +444,7 @@ class VisionProcessor:
                     if label == "truck":
                         if _overlay is not None:
                             _overlay.draw_vehicle_box(view, corners, 0.0, front_extra_cm=7.0, rear_extra_cm=5.0, side_extra_cm=2.0, color=(255, 120, 0))
-                            _overlay.draw_truck_pivot_x(view, corners, MARKER_SIZE_CM)
+                            _overlay.draw_truck_pivot_x(view, corners, params.MARKER_SIZE_CM)
                     elif label == "trailer":
                         if _overlay is not None:
                             _overlay.draw_vehicle_box(view, corners, 0.0, front_extra_cm=9.0, rear_extra_cm=7.0, side_extra_cm=2.0, color=(180, 0, 255))
@@ -467,10 +465,8 @@ class VisionProcessor:
                 self.axis_px_per_cm = None
         self.latest_hitch_vision_deg = hitch_vision_deg
         if _overlay is not None:
-            _overlay.draw_prediction_path(view, self.pred_path_xy_cm, self.axis_origin_px, self.axis_x_hat_px, self.axis_y_hat_px, self.axis_px_per_cm)
+            path = pred_path_xy_cm if pred_path_xy_cm is not None else []
+            _overlay.draw_prediction_path(
+                view, path, self.axis_origin_px, self.axis_x_hat_px, self.axis_y_hat_px, self.axis_px_per_cm
+            )
         return view, found_count, hitch_vision_deg
-
-    @staticmethod
-    def _wrap_angle(angle: float) -> float:
-        import math
-        return math.atan2(math.sin(angle), math.cos(angle))

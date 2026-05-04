@@ -2,14 +2,13 @@ import cv2
 import numpy as np
 
 from truck_n_trailer.vision.camera import open_configured_camera
+from truck_n_trailer import params
 from truck_n_trailer.vision.config import (
     CAMERA_PARAMS_PATH,
     HOMOGRAPHY_PATH,
     ARUCO_DICT,
     ARUCO_PARAMS,
     TRACKING_MARKER_IDS,
-    WORKSPACE_WIDTH_CM,
-    WORKSPACE_HEIGHT_CM,
 )
 
 
@@ -56,9 +55,9 @@ def marker_pose_world(corners, H):
 def draw_world_plane(frame, H_inv):
     world_corners = np.array([
         [0.0, 0.0],
-        [WORKSPACE_WIDTH_CM, 0.0],
-        [WORKSPACE_WIDTH_CM, WORKSPACE_HEIGHT_CM],
-        [0.0, WORKSPACE_HEIGHT_CM],
+        [params.WORKSPACE_WIDTH_CM, 0.0],
+        [params.WORKSPACE_WIDTH_CM, params.WORKSPACE_HEIGHT_CM],
+        [0.0, params.WORKSPACE_HEIGHT_CM],
     ], dtype=np.float32)
 
     plane_px = np.array([world_to_pixel(pt, H_inv) for pt in world_corners], dtype=np.float32)
