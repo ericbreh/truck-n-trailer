@@ -17,13 +17,23 @@ from truck_n_trailer.vision.camera import open_configured_camera
 from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     ARUCO_PARAMS,
+    GOAL_AXIS_HANDEDNESS,
     TRACKING_MARKER_IDS,
-    REFERENCE_MARKER_IDS,
+    GOAL_MARKER_ID,
 )
-from truck_n_trailer.vision.detect import load_calibration, marker_pose_world, draw_world_plane
 from truck_n_trailer.vision import overlay as _overlay
 
 CAMERA_AUTO_SETTLE_SECONDS = 2.0
+
+
+def _marker_edge_lengths_px(corners: np.ndarray) -> list[float]:
+    c = corners.astype(float)
+    return [
+        float(np.linalg.norm(c[1] - c[0])),
+        float(np.linalg.norm(c[2] - c[1])),
+        float(np.linalg.norm(c[3] - c[2])),
+        float(np.linalg.norm(c[0] - c[3])),
+    ]
 
 
 class VisionProcessor:
@@ -32,12 +42,7 @@ class VisionProcessor:
     def __init__(self):
         self.cap = None
         self.detector = None
-        self.K = None
-        self.dist = None
-        self.H = None
-        self.H_inv = None
         self.frame_counter = 0
-        self.reference_marker_corners_cache: dict[int, np.ndarray] = {}
         self.vision_q: Optional[np.ndarray] = None
         self.goal_xy: Optional[np.ndarray] = None
         self.latest_hitch_vision_deg: Optional[float] = None
@@ -46,9 +51,6 @@ class VisionProcessor:
         self.axis_y_hat_px = None
         self.axis_px_per_cm: Optional[float] = None
         self.goal_screen_px: Optional[tuple[int, int]] = None
-        self.path_map_origin_world: Optional[np.ndarray] = None
-        self.path_map_ex_world: Optional[np.ndarray] = None
-        self.path_map_ey_world: Optional[np.ndarray] = None
         self._lock_controls_at: Optional[float] = None
         self._camera_controls_locked = False
 
@@ -72,7 +74,6 @@ class VisionProcessor:
         self._lock_controls_at = time.monotonic() + CAMERA_AUTO_SETTLE_SECONDS
         self._camera_controls_locked = False
         self.frame_counter = 0
-        self.reference_marker_corners_cache.clear()
         self._init_detector()
         self.latest_hitch_vision_deg = None
         return "Camera: Connected"
@@ -83,12 +84,7 @@ class VisionProcessor:
         self.cap.release()
         self.cap = None
         self.detector = None
-        self.K = None
-        self.dist = None
-        self.H = None
-        self.H_inv = None
         self.frame_counter = 0
-        self.reference_marker_corners_cache.clear()
         self.vision_q = None
         self.goal_xy = None
         self.latest_hitch_vision_deg = None
@@ -97,9 +93,6 @@ class VisionProcessor:
         self.axis_y_hat_px = None
         self.axis_px_per_cm = None
         self.goal_screen_px = None
-        self.path_map_origin_world = None
-        self.path_map_ex_world = None
-        self.path_map_ey_world = None
         self._lock_controls_at = None
         self._camera_controls_locked = False
 
@@ -123,7 +116,6 @@ class VisionProcessor:
         except Exception:
             pass
 
-        # OpenCV backend values vary by platform; keep last observed exposure.
         try:
             exposure = cap.get(cv2.CAP_PROP_EXPOSURE)
             cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
@@ -133,25 +125,10 @@ class VisionProcessor:
 
     def _init_detector(self):
         self.detector = None
-        self.K = None
-        self.dist = None
-        self.H = None
-        self.H_inv = None
         if cv2 is None or ARUCO_DICT is None or ARUCO_PARAMS is None:
             return
         try:
             self.detector = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
-        except Exception:
-            return
-        if load_calibration is None:
-            return
-        try:
-            K, dist, H = load_calibration()
-            if K is not None and dist is not None and H is not None:
-                self.K = K
-                self.dist = dist
-                self.H = H
-                self.H_inv = np.linalg.inv(H)
         except Exception:
             pass
 
@@ -171,292 +148,142 @@ class VisionProcessor:
             return None, None, None
         self.frame_counter += 1
         view = frame
-        if self.K is not None and self.dist is not None:
-            try:
-                view = cv2.undistort(view, self.K, self.dist)
-            except Exception:
-                pass
-        if self.H_inv is not None and draw_world_plane is not None:
-            try:
-                draw_world_plane(view, self.H_inv)
-            except Exception:
-                pass
         found_count = 0
         hitch_vision_deg = None
+        self.vision_q = None
+        self.goal_xy = None
+        self.axis_origin_px = None
+        self.axis_x_hat_px = None
+        self.axis_y_hat_px = None
+        self.axis_px_per_cm = None
+        self.goal_screen_px = None
+
         if self.detector is not None:
             try:
                 corners_list, ids, _ = self.detector.detectMarkers(view)
             except Exception:
                 corners_list, ids = None, None
             if ids is not None:
-                self.path_map_origin_world = None
-                self.path_map_ex_world = None
-                self.path_map_ey_world = None
                 id_to_corners = {int(ids[i][0]): corners_list[i][0] for i in range(len(ids))}
-                required_ref_ids = (10, 11, 12, 13)
-                for marker_id in required_ref_ids:
-                    corners = id_to_corners.get(marker_id)
-                    if corners is not None:
-                        self.reference_marker_corners_cache[marker_id] = corners.copy()
-                box_id_to_corners = dict(id_to_corners)
-                for marker_id in required_ref_ids:
-                    if marker_id not in box_id_to_corners:
-                        cached = self.reference_marker_corners_cache.get(marker_id)
-                        if cached is not None:
-                            box_id_to_corners[marker_id] = cached
-                ref_px_lengths = []
-                for marker_id in required_ref_ids:
-                    c = box_id_to_corners.get(marker_id)
-                    if c is None:
-                        continue
-                    ref_px_lengths.extend([
-                        float(np.linalg.norm(c[1] - c[0])),
-                        float(np.linalg.norm(c[2] - c[1])),
-                        float(np.linalg.norm(c[3] - c[2])),
-                        float(np.linalg.norm(c[0] - c[3])),
-                    ])
-                if ref_px_lengths:
-                    self.axis_px_per_cm = (sum(ref_px_lengths) / len(ref_px_lengths)) / params.MARKER_SIZE_CM
-                else:
-                    self.axis_px_per_cm = None
-                truck_corners = id_to_corners.get(0)
-                trailer_corners = id_to_corners.get(1)
-                if truck_corners is not None and trailer_corners is not None:
+                goal_c = id_to_corners.get(GOAL_MARKER_ID)
+                truck_c = id_to_corners.get(0)
+                trailer_c = id_to_corners.get(1)
+
+                if goal_c is not None and truck_c is not None and trailer_c is not None:
                     try:
-                        if self.H is not None and marker_pose_world is not None:
-                            truck_pos_world, truck_heading_world = marker_pose_world(truck_corners, self.H)
-                            trailer_pos_world, trailer_heading_world = marker_pose_world(trailer_corners, self.H)
-                            hitch_vision_deg = float(np.degrees(wrap_angle_rad(float(truck_heading_world - trailer_heading_world))))
-                            axis_tr = box_id_to_corners.get(11)
-                            axis_br = box_id_to_corners.get(12)
-                            if axis_tr is not None and axis_br is not None:
-                                tr_center_px = axis_tr.mean(axis=0).astype(np.float32)
-                                br_center_px = axis_br.mean(axis=0).astype(np.float32)
-                                axis_pts_world = cv2.perspectiveTransform(
-                                    np.array([[br_center_px, tr_center_px]], dtype=np.float32),
-                                    self.H,
-                                )[0]
-                                origin = axis_pts_world[0].astype(float)
-                                y_vec = axis_pts_world[1].astype(float) - origin
-                                y_norm = float(np.linalg.norm(y_vec))
-                                if y_norm > 1e-6:
-                                    y_hat = y_vec / y_norm
-                                    x_hat = np.array([y_hat[1], -y_hat[0]], dtype=float)
-                                    self.axis_origin_px = br_center_px.astype(float)
-                                    self.axis_y_hat_px = y_hat.astype(float)
-                                    self.axis_x_hat_px = x_hat.astype(float)
-                                    self.axis_px_per_cm = None
-                                    self.path_map_origin_world = origin.astype(float)
-                                    self.path_map_ex_world = x_hat.astype(float)
-                                    self.path_map_ey_world = y_hat.astype(float)
-                                    ref_ids = (10, 11, 12, 13)
-                                    if all(mid in box_id_to_corners for mid in ref_ids):
-                                        r_tl = box_id_to_corners[10][2].astype(np.float32)
-                                        r_tr = box_id_to_corners[11][3].astype(np.float32)
-                                        r_br = box_id_to_corners[12][0].astype(np.float32)
-                                        r_bl = box_id_to_corners[13][1].astype(np.float32)
-                                        ref_poly_px = np.array([[r_tl, r_tr, r_br, r_bl]], dtype=np.float32)
-                                        ref_poly_world = cv2.perspectiveTransform(ref_poly_px, self.H)[0]
+                        px_lengths: list[float] = []
+                        for c in (goal_c, truck_c, trailer_c):
+                            px_lengths.extend(_marker_edge_lengths_px(c))
+                        px_per_cm = (sum(px_lengths) / len(px_lengths)) / params.MARKER_SIZE_CM
+                        if px_per_cm <= 1e-6:
+                            raise ValueError("bad scale")
 
-                                        def _unit(v):
-                                            n = float(np.linalg.norm(v))
-                                            if n < 1e-6:
-                                                return np.zeros(2, dtype=np.float32)
-                                            return (v / n).astype(np.float32)
-
-                                        inset_side = params.WORKSPACE_BOX_SIDE_INSET_CM
-                                        extend_vertical = params.WORKSPACE_BOX_VERTICAL_EXTEND_CM
-                                        w_tl, w_tr, w_br, w_bl = ref_poly_world
-                                        in_tl = w_tl + inset_side * _unit(w_tr - w_tl) - extend_vertical * _unit(w_bl - w_tl)
-                                        in_tr = w_tr + inset_side * _unit(w_tl - w_tr) - extend_vertical * _unit(w_br - w_tr)
-                                        in_br = w_br + inset_side * _unit(w_bl - w_br) - extend_vertical * _unit(w_tr - w_br)
-                                        in_bl = w_bl + inset_side * _unit(w_br - w_bl) - extend_vertical * _unit(w_tl - w_bl)
-                                        box_center_world = np.array([in_tl, in_tr, in_br, in_bl], dtype=np.float32).mean(axis=0)
-                                        rel_goal = box_center_world - origin
-                                        self.goal_xy = np.array([
-                                            float(np.dot(rel_goal, x_hat)),
-                                            float(np.dot(rel_goal, y_hat)),
-                                        ], dtype=float)
-                                        if self.H_inv is not None:
-                                            try:
-                                                gpt = cv2.perspectiveTransform(
-                                                    np.array(
-                                                        [[[float(box_center_world[0]), float(box_center_world[1])]]],
-                                                        dtype=np.float32,
-                                                    ),
-                                                    self.H_inv,
-                                                )[0][0]
-                                                self.goal_screen_px = (
-                                                    int(round(float(gpt[0]))),
-                                                    int(round(float(gpt[1]))),
-                                                )
-                                            except Exception:
-                                                self.goal_screen_px = None
-                                    truck_center_world = np.array(truck_pos_world, dtype=float)
-                                    trailer_center_world = np.array(trailer_pos_world, dtype=float)
-                                    truck_center_px = truck_corners.mean(axis=0).astype(np.float32)
-                                    truck_top_mid_px = ((truck_corners[0] + truck_corners[1]) / 2.0).astype(np.float32)
-                                    truck_pts_world = cv2.perspectiveTransform(
-                                        np.array([[truck_center_px, truck_top_mid_px]], dtype=np.float32),
-                                        self.H,
-                                    )[0]
-                                    truck_fwd_world = truck_pts_world[1].astype(float) - truck_pts_world[0].astype(float)
-                                    truck_fwd_norm = float(np.linalg.norm(truck_fwd_world))
-                                    if truck_fwd_norm > 1e-6:
-                                        truck_fwd_world /= truck_fwd_norm
-                                        back_offset_cm = params.MARKER_SIZE_CM * 0.5 + 4.0
-                                        pivot_world = truck_center_world - truck_fwd_world * back_offset_cm
-                                        rel_pivot = pivot_world - origin
-                                        pivot_xy = np.array([
-                                            float(np.dot(rel_pivot, x_hat)),
-                                            float(np.dot(rel_pivot, y_hat)),
-                                        ], dtype=float)
-                                        truck_fwd_local = np.array([
-                                            float(np.dot(truck_fwd_world, x_hat)),
-                                            float(np.dot(truck_fwd_world, y_hat)),
-                                        ], dtype=float)
-                                        theta_t = float(wrap_angle_rad(math.atan2(truck_fwd_local[1], truck_fwd_local[0])))
-                                        trailer_top_mid_px = ((trailer_corners[0] + trailer_corners[1]) / 2.0).astype(np.float32)
-                                        trailer_pts_world = cv2.perspectiveTransform(
-                                            np.array([[trailer_center_world.astype(np.float32), trailer_top_mid_px]], dtype=np.float32),
-                                            self.H,
-                                        )[0]
-                                        trailer_fwd_world = trailer_pts_world[1].astype(float) - trailer_pts_world[0].astype(float)
-                                        trailer_norm = float(np.linalg.norm(trailer_fwd_world))
-                                        if trailer_norm > 1e-6:
-                                            trailer_fwd_world /= trailer_norm
-                                            trailer_fwd_local = np.array([
-                                                float(np.dot(trailer_fwd_world, x_hat)),
-                                                float(np.dot(trailer_fwd_world, y_hat)),
-                                            ], dtype=float)
-                                            theta_l = float(wrap_angle_rad(math.atan2(trailer_fwd_local[1], trailer_fwd_local[0])))
-                                            self.vision_q = np.array([
-                                                float(pivot_xy[0]),
-                                                float(pivot_xy[1]),
-                                                float(theta_t),
-                                                float(theta_l),
-                                                0.0,
-                                                0.0,
-                                            ], dtype=float)
-                                        else:
-                                            self.vision_q = None
-                                    else:
-                                        self.vision_q = None
-                                else:
-                                    self.vision_q = None
-                            else:
-                                self.vision_q = None
+                        origin_px = goal_c.mean(axis=0).astype(float)
+                        g_top = (goal_c[0] + goal_c[1]) / 2.0
+                        y_vec = g_top.astype(float) - origin_px
+                        y_norm = float(np.linalg.norm(y_vec))
+                        if y_norm <= 1e-6:
+                            raise ValueError("degenerate goal axis")
+                        y_hat_px = y_vec / y_norm
+                        # x̂ ⊥ ŷ in the image. CW vs CCW picks which side of ŷ is +x; that sets whether θ
+                        # increases CCW with MPC when the camera uses y-down pixels (independent of how the
+                        # paper marker is rotated on the floor). GOAL_AXIS_HANDEDNESS in config.py.
+                        h = GOAL_AXIS_HANDEDNESS.strip().lower()
+                        if h == "ccw":
+                            x_hat_px = np.array([-y_hat_px[1], y_hat_px[0]], dtype=float)
                         else:
-                            axis_tr = box_id_to_corners.get(11)
-                            axis_br = box_id_to_corners.get(12)
-                            if axis_tr is None or axis_br is None:
-                                self.vision_q = None
-                            else:
-                                px_lengths = []
-                                for marker_id in required_ref_ids:
-                                    c = box_id_to_corners.get(marker_id)
-                                    if c is None:
-                                        continue
-                                    px_lengths.extend([
-                                        float(np.linalg.norm(c[1] - c[0])),
-                                        float(np.linalg.norm(c[2] - c[1])),
-                                        float(np.linalg.norm(c[3] - c[2])),
-                                        float(np.linalg.norm(c[0] - c[3])),
-                                    ])
-                                if not px_lengths:
-                                    self.vision_q = None
-                                else:
-                                    px_per_cm = (sum(px_lengths) / len(px_lengths)) / params.MARKER_SIZE_CM
-                                    if px_per_cm <= 1e-6:
-                                        self.vision_q = None
-                                    else:
-                                        tr_center_px = axis_tr.mean(axis=0).astype(float)
-                                        br_center_px = axis_br.mean(axis=0).astype(float)
-                                        y_vec_px = tr_center_px - br_center_px
-                                        y_norm = float(np.linalg.norm(y_vec_px))
-                                        if y_norm <= 1e-6:
-                                            self.vision_q = None
-                                        else:
-                                            y_hat_px = y_vec_px / y_norm
-                                            x_hat_px = np.array([y_hat_px[1], -y_hat_px[0]], dtype=float)
-                                            origin_px = br_center_px
-                                            self.axis_origin_px = origin_px.astype(float)
-                                            self.axis_x_hat_px = x_hat_px.astype(float)
-                                            self.axis_y_hat_px = y_hat_px.astype(float)
-                                            self.axis_px_per_cm = float(px_per_cm)
+                            x_hat_px = np.array([y_hat_px[1], -y_hat_px[0]], dtype=float)
 
-                                            def _unit(v):
-                                                n = float(np.linalg.norm(v))
-                                                if n < 1e-6:
-                                                    return np.zeros(2, dtype=float)
-                                                return v / n
+                        self.axis_origin_px = origin_px
+                        self.axis_x_hat_px = x_hat_px
+                        self.axis_y_hat_px = y_hat_px
+                        self.axis_px_per_cm = float(px_per_cm)
 
-                                            def _to_local_cm(pt_px):
-                                                rel = pt_px.astype(float) - origin_px
-                                                return np.array([
-                                                    float(np.dot(rel, x_hat_px) / px_per_cm),
-                                                    float(np.dot(rel, y_hat_px) / px_per_cm),
-                                                ], dtype=float)
+                        gc = goal_c.mean(axis=0)
+                        self.goal_screen_px = (int(round(float(gc[0]))), int(round(float(gc[1]))))
+                        self.goal_xy = np.array([0.0, 0.0], dtype=float)
 
-                                            if all(mid in box_id_to_corners for mid in required_ref_ids):
-                                                p_tl = box_id_to_corners[10][2].astype(float)
-                                                p_tr = box_id_to_corners[11][3].astype(float)
-                                                p_br = box_id_to_corners[12][0].astype(float)
-                                                p_bl = box_id_to_corners[13][1].astype(float)
-                                                inset_side_px = params.WORKSPACE_BOX_SIDE_INSET_CM * px_per_cm
-                                                extend_vertical_px = params.WORKSPACE_BOX_VERTICAL_EXTEND_CM * px_per_cm
-                                                in_tl = p_tl + inset_side_px * _unit(p_tr - p_tl) - extend_vertical_px * _unit(p_bl - p_tl)
-                                                in_tr = p_tr + inset_side_px * _unit(p_tl - p_tr) - extend_vertical_px * _unit(p_br - p_tr)
-                                                in_br = p_br + inset_side_px * _unit(p_bl - p_br) - extend_vertical_px * _unit(p_tr - p_br)
-                                                in_bl = p_bl + inset_side_px * _unit(p_br - p_bl) - extend_vertical_px * _unit(p_tl - p_bl)
-                                                box_center_px = np.array([in_tl, in_tr, in_br, in_bl], dtype=float).mean(axis=0)
-                                                self.goal_xy = _to_local_cm(box_center_px)
-                                                self.goal_screen_px = (
-                                                    int(round(float(box_center_px[0]))),
-                                                    int(round(float(box_center_px[1]))),
-                                                )
-                                            truck_center_px = truck_corners.mean(axis=0).astype(float)
-                                            truck_top_mid_px = ((truck_corners[0] + truck_corners[1]) / 2.0).astype(float)
-                                            trailer_center_px = trailer_corners.mean(axis=0).astype(float)
-                                            trailer_top_mid_px = ((trailer_corners[0] + trailer_corners[1]) / 2.0).astype(float)
-                                            truck_fwd_px = truck_top_mid_px - truck_center_px
-                                            trailer_fwd_px = trailer_top_mid_px - trailer_center_px
-                                            tn = float(np.linalg.norm(truck_fwd_px))
-                                            ln = float(np.linalg.norm(trailer_fwd_px))
-                                            if tn <= 1e-6 or ln <= 1e-6:
-                                                self.vision_q = None
-                                            else:
-                                                truck_fwd_px /= tn
-                                                trailer_fwd_px /= ln
-                                                theta_t = float(wrap_angle_rad(math.atan2(float(np.dot(truck_fwd_px, y_hat_px)), float(np.dot(truck_fwd_px, x_hat_px)))))
-                                                theta_l = float(wrap_angle_rad(math.atan2(float(np.dot(trailer_fwd_px, y_hat_px)), float(np.dot(trailer_fwd_px, x_hat_px)))))
-                                                hitch_vision_deg = float(np.degrees(wrap_angle_rad(theta_t - theta_l)))
-                                                back_offset_px = (params.MARKER_SIZE_CM * 0.5 + 4.0) * px_per_cm
-                                                pivot_px = truck_center_px - truck_fwd_px * back_offset_px
-                                                pivot_xy = _to_local_cm(pivot_px)
-                                                self.vision_q = np.array([
-                                                    float(pivot_xy[0]),
-                                                    float(pivot_xy[1]),
-                                                    float(theta_t),
-                                                    float(theta_l),
-                                                    0.0,
-                                                    0.0,
-                                                ], dtype=float)
+                        def _to_local_cm(pt_px: np.ndarray) -> np.ndarray:
+                            rel = pt_px.astype(float) - origin_px
+                            return np.array(
+                                [
+                                    float(np.dot(rel, x_hat_px) / px_per_cm),
+                                    float(np.dot(rel, y_hat_px) / px_per_cm),
+                                ],
+                                dtype=float,
+                            )
+
+                        truck_center_px = truck_c.mean(axis=0).astype(float)
+                        truck_top_mid_px = ((truck_c[0] + truck_c[1]) / 2.0).astype(float)
+                        trailer_center_px = trailer_c.mean(axis=0).astype(float)
+                        trailer_top_mid_px = ((trailer_c[0] + trailer_c[1]) / 2.0).astype(float)
+                        truck_fwd_px = truck_top_mid_px - truck_center_px
+                        trailer_fwd_px = trailer_top_mid_px - trailer_center_px
+                        tn = float(np.linalg.norm(truck_fwd_px))
+                        ln = float(np.linalg.norm(trailer_fwd_px))
+                        if tn <= 1e-6 or ln <= 1e-6:
+                            raise ValueError("degenerate heading")
+                        truck_fwd_px /= tn
+                        trailer_fwd_px /= ln
+                        theta_t = float(
+                            wrap_angle_rad(
+                                math.atan2(
+                                    float(np.dot(truck_fwd_px, y_hat_px)),
+                                    float(np.dot(truck_fwd_px, x_hat_px)),
+                                )
+                            )
+                        )
+                        theta_l = float(
+                            wrap_angle_rad(
+                                math.atan2(
+                                    float(np.dot(trailer_fwd_px, y_hat_px)),
+                                    float(np.dot(trailer_fwd_px, x_hat_px)),
+                                )
+                            )
+                        )
+                        hitch_vision_deg = float(np.degrees(wrap_angle_rad(theta_t - theta_l)))
+
+                        back_offset_px = (params.MARKER_SIZE_CM * 0.5 + 4.0) * px_per_cm
+                        pivot_px = truck_center_px - truck_fwd_px * back_offset_px
+                        pivot_xy = _to_local_cm(pivot_px)
+
+                        self.vision_q = np.array(
+                            [
+                                float(pivot_xy[0]),
+                                float(pivot_xy[1]),
+                                float(theta_t),
+                                float(theta_l),
+                                0.0,
+                                0.0,
+                            ],
+                            dtype=float,
+                        )
                     except Exception:
-                        hitch_vision_deg = None
                         self.vision_q = None
-                else:
-                    self.vision_q = None
-                all_names = {}
-                all_names.update(REFERENCE_MARKER_IDS)
-                all_names.update(TRACKING_MARKER_IDS)
+                        self.goal_xy = None
+                        self.axis_origin_px = None
+                        self.axis_x_hat_px = None
+                        self.axis_y_hat_px = None
+                        self.axis_px_per_cm = None
+                        self.goal_screen_px = None
+
+                all_names = {**TRACKING_MARKER_IDS, GOAL_MARKER_ID: "goal"}
                 for marker_id, corners in id_to_corners.items():
                     pts = corners.astype(int)
                     cv2.polylines(view, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
                     center = corners.mean(axis=0).astype(int)
                     label = all_names.get(marker_id, f"id {marker_id}")
                     text = f"{label} ({marker_id})"
-                    cv2.putText(view, text, (int(pts[0][0]), int(pts[0][1]) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA)
+                    cv2.putText(
+                        view,
+                        text,
+                        (int(pts[0][0]), int(pts[0][1]) - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
                     cv2.circle(view, tuple(center), 4, (0, 255, 255), -1)
                     if label == "truck":
                         if _overlay is not None:
@@ -481,51 +308,20 @@ class VisionProcessor:
                                 color=(180, 0, 255),
                                 marker_size_cm=params.MARKER_SIZE_CM,
                             )
-                    if self.H is not None and marker_pose_world is not None:
-                        try:
-                            world_pos, heading = marker_pose_world(corners, self.H)
-                            deg = float(np.degrees(heading))
-                            pose_text = f"({world_pos[0]:.1f},{world_pos[1]:.1f}) {deg:.1f}deg"
-                            cv2.putText(view, pose_text, (int(pts[0][0]), int(pts[0][1]) + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2, cv2.LINE_AA)
-                        except Exception:
-                            pass
                     found_count += 1
-            else:
-                self.vision_q = None
-                self.axis_origin_px = None
-                self.axis_x_hat_px = None
-                self.axis_y_hat_px = None
-                self.axis_px_per_cm = None
-                self.path_map_origin_world = None
-                self.path_map_ex_world = None
-                self.path_map_ey_world = None
+
         self.latest_hitch_vision_deg = hitch_vision_deg
         if _overlay is not None:
             path = pred_path_xy_cm if pred_path_xy_cm is not None else []
             if len(path) >= 2:
-                if (
-                    self.path_map_origin_world is not None
-                    and self.path_map_ex_world is not None
-                    and self.path_map_ey_world is not None
-                    and self.H_inv is not None
-                ):
-                    _overlay.draw_local_path_homography(
-                        view,
-                        path,
-                        self.path_map_origin_world,
-                        self.path_map_ex_world,
-                        self.path_map_ey_world,
-                        self.H_inv,
-                    )
-                else:
-                    _overlay.draw_prediction_path(
-                        view,
-                        path,
-                        self.axis_origin_px,
-                        self.axis_x_hat_px,
-                        self.axis_y_hat_px,
-                        self.axis_px_per_cm,
-                    )
+                _overlay.draw_prediction_path(
+                    view,
+                    path,
+                    self.axis_origin_px,
+                    self.axis_x_hat_px,
+                    self.axis_y_hat_px,
+                    self.axis_px_per_cm,
+                )
             if self.goal_screen_px is not None:
                 _overlay.draw_parking_goal_marker(
                     view, self.goal_screen_px[0], self.goal_screen_px[1]

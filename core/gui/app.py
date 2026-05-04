@@ -9,7 +9,6 @@ if __package__ is None or __package__ == "":
     __package__ = "truck_n_trailer.gui"
 
 import argparse
-import time
 
 import numpy as np
 
@@ -403,7 +402,7 @@ class TruckControlGui(QWidget):
         if self.sender is None:
             return
         if self.vision.vision_q is None or self.vision.goal_xy is None:
-            self.auto_status_label.setText("MPC: Need vision lock (truck, trailer, refs)")
+            self.auto_status_label.setText("MPC: Need vision lock (truck, trailer, goal)")
             return
         motor_rpms = self.sender.read_motor_rpms()
         if self.auto.start(self.vision.vision_q, self.vision.goal_xy, motor_rpms):
@@ -679,7 +678,7 @@ class TruckControlGui(QWidget):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Truck UART Teleoperation GUI")
     parser.add_argument("--port", default="", help="Serial port for UART (e.g. /dev/ttyACM0)")
-    parser.add_argument("--rpm", type=float, default=80, help="Initial base RPM (0-120)")
+    parser.add_argument("--rpm", type=float, default=30, help="Initial base RPM (0-120)")
     return parser
 
 

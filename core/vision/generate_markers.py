@@ -6,8 +6,9 @@ MARKERS_DIR = Path(__file__).parent / "markers"
 from truck_n_trailer.vision.config import (
     ARUCO_DICT,
     TRACKING_MARKER_IDS,
-    REFERENCE_MARKER_IDS,
+    GOAL_MARKER_ID,
 )
+
 
 def save_marker(marker_id: int, label: str) -> None:
     img = cv2.aruco.generateImageMarker(ARUCO_DICT, marker_id, 200)
@@ -22,10 +23,9 @@ def main() -> None:
     for marker_id, name in TRACKING_MARKER_IDS.items():
         save_marker(marker_id, name)
 
-    for marker_id, name in REFERENCE_MARKER_IDS.items():
-        save_marker(marker_id, name)
+    save_marker(GOAL_MARKER_ID, "goal")
 
-    total = len(TRACKING_MARKER_IDS) + len(REFERENCE_MARKER_IDS)
+    total = len(TRACKING_MARKER_IDS) + 1
     print(f"\nDone. {total} markers written to: {MARKERS_DIR}")
 
 

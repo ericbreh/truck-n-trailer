@@ -219,12 +219,11 @@ class AutoStateView(QWidget):
 
         body_w_px = max(self.truck_len_cm, self.trailer_len_cm) * 0.28 * scale
 
-        # World (x east, y north) is drawn with y flipped to screen coords. Long-axis
-        # rotation must map world heading to Qt painter rotation separately for each
-        # body: truck COM is *ahead* of the hitch along +heading, trailer COM is *behind*
-        # along +heading, so screen rotation from hitch→COM differs by a sign flip.
-        truck_rot_deg = math.degrees(math.atan2(math.sin(theta_t), -math.cos(theta_t)))
-        trailer_rot_deg = math.degrees(math.atan2(-math.sin(theta_l), math.cos(theta_l)))
+        # World (x east, y north) is drawn with y flipped in to_px. Truck COM is *ahead*
+        # of the hitch along +(cos θ_t, sin θ_t); trailer COM is *behind* along
+        # +(cos θ_l, sin θ_l), so the trailer long axis aligns with -(cos θ_l, sin θ_l).
+        truck_rot_deg = math.degrees(math.atan2(-math.sin(theta_t), math.cos(theta_t)))
+        trailer_rot_deg = math.degrees(math.atan2(math.sin(theta_l), -math.cos(theta_l)))
 
         def draw_body_glowing(cx: float, cy: float, rotation_deg: float,
                               length_cm: float, fill: QColor,
