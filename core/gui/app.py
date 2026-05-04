@@ -124,8 +124,10 @@ class TruckControlGui(QWidget):
         self.calibrate_btn = QPushButton("Calibration")
         self.manual_left_rpm = TelemetryCard("0.0", "Left RPM")
         self.manual_right_rpm = TelemetryCard("0.0", "Right RPM")
-        self.auto_left_rpm = TelemetryCard("0.0", "Left RPM")
-        self.auto_right_rpm = TelemetryCard("0.0", "Right RPM")
+        self.auto_cmd_left_rpm = TelemetryCard("0.0", "Cmd L (MPC→UART)")
+        self.auto_cmd_right_rpm = TelemetryCard("0.0", "Cmd R (MPC→UART)")
+        self.auto_act_left_rpm = TelemetryCard("0.0", "Act L (ESP)")
+        self.auto_act_right_rpm = TelemetryCard("0.0", "Act R (ESP)")
 
         self.camera_source_box = QComboBox()
         self.camera_refresh_btn = QPushButton("Refresh")
@@ -238,16 +240,18 @@ class TruckControlGui(QWidget):
         )
         auto_layout.addLayout(auto_ctrl_row)
 
-        auto_telemetry_group = QGroupBox("Telemetry")
+        auto_telemetry_group = QGroupBox("Motor RPM (command vs actual)")
         auto_telemetry_group.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Maximum,
         )
-        auto_telemetry_group.setMaximumHeight(108)
-        auto_telemetry_row = QHBoxLayout(auto_telemetry_group)
-        auto_telemetry_row.setSpacing(6)
-        auto_telemetry_row.addWidget(self.auto_left_rpm)
-        auto_telemetry_row.addWidget(self.auto_right_rpm)
+        auto_telemetry_group.setMaximumHeight(168)
+        auto_telemetry_grid = QGridLayout(auto_telemetry_group)
+        auto_telemetry_grid.setSpacing(6)
+        auto_telemetry_grid.addWidget(self.auto_cmd_left_rpm, 0, 0)
+        auto_telemetry_grid.addWidget(self.auto_cmd_right_rpm, 0, 1)
+        auto_telemetry_grid.addWidget(self.auto_act_left_rpm, 1, 0)
+        auto_telemetry_grid.addWidget(self.auto_act_right_rpm, 1, 1)
         auto_layout.addWidget(auto_telemetry_group)
         auto_layout.addStretch(1)
 
@@ -373,14 +377,16 @@ class TruckControlGui(QWidget):
     def _reset_manual_stats(self) -> None:
         self.manual_left_rpm.setText("0.0")
         self.manual_right_rpm.setText("0.0")
-        self.auto_left_rpm.setText("0.0")
-        self.auto_right_rpm.setText("0.0")
+        self.auto_cmd_left_rpm.setText("0.0")
+        self.auto_cmd_right_rpm.setText("0.0")
+        self.auto_act_left_rpm.setText("0.0")
+        self.auto_act_right_rpm.setText("0.0")
 
-    def _update_manual_stats(self, rpm_l: float, rpm_r: float) -> None:
-        self.manual_left_rpm.setText(f"{rpm_l:.1f}")
-        self.manual_right_rpm.setText(f"{rpm_r:.1f}")
-        self.auto_left_rpm.setText(f"{rpm_l:.1f}")
-        self.auto_right_rpm.setText(f"{rpm_r:.1f}")
+    def _reset_auto_motor_display(self) -> None:
+        self.auto_cmd_left_rpm.setText("0.0")
+        self.auto_cmd_right_rpm.setText("0.0")
+        self.auto_act_left_rpm.setText("0.0")
+        self.auto_act_right_rpm.setText("0.0")
 
     def _is_manual_mode(self) -> bool:
         return self.mode_stack.currentIndex() == 0
@@ -396,6 +402,7 @@ class TruckControlGui(QWidget):
         else:
             self._set_motion("STOP")
             self.auto_status_label.setText("MPC: Idle")
+            self._reset_auto_motor_display()
             self._update_button_states()
 
     def _auto_start(self) -> None:
@@ -614,12 +621,20 @@ class TruckControlGui(QWidget):
             self.latest_hitch_raw_deg = pot_angle_deg
             self._update_hitch_angle_display(pot_angle_deg)
         motor_rpms = sender.read_motor_rpms()
-        if motor_rpms is not None:
-            self._update_manual_stats(motor_rpms[0], motor_rpms[1])
+        if self._is_manual_mode():
+            if motor_rpms is not None:
+                self.manual_left_rpm.setText(f"{motor_rpms[0]:.1f}")
+                self.manual_right_rpm.setText(f"{motor_rpms[1]:.1f}")
+        else:
+            if motor_rpms is not None:
+                self.auto_act_left_rpm.setText(f"{motor_rpms[0]:.1f}")
+                self.auto_act_right_rpm.setText(f"{motor_rpms[1]:.1f}")
 
         if self.mode_stack.currentIndex() == 1:
             if self.auto.running:
                 rpm_l, rpm_r = self.auto.tick(self.vision.vision_q, self.vision.goal_xy, motor_rpms)
+                self.auto_cmd_left_rpm.setText(f"{rpm_l:.1f}")
+                self.auto_cmd_right_rpm.setText(f"{rpm_r:.1f}")
                 self.auto_status_label.setText("MPC: Running")
                 if self.auto.reached_goal():
                     self.auto.stop()
@@ -627,6 +642,8 @@ class TruckControlGui(QWidget):
                     self._update_button_states()
             else:
                 rpm_l, rpm_r = 0.0, 0.0
+                self.auto_cmd_left_rpm.setText("0.0")
+                self.auto_cmd_right_rpm.setText("0.0")
         else:
             base_rpm = float(self.speed_slider.value())
             rpm_l, rpm_r = motion_to_rpms(self.current_motion, base_rpm)
