@@ -108,7 +108,7 @@ class AutoStateView(QWidget):
             painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
             font = painter.font()
             font.setPointSize(11)
-            font.setFamily("Courier New")
+            font.setFamily("SF Mono")
             painter.setFont(font)
             painter.setPen(QColor("#1e3a5f"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "WAITING FOR STATE")
@@ -134,7 +134,7 @@ class AutoStateView(QWidget):
         grid_pen_major = QPen(QColor(30, 58, 95, 120), 1)
         font = painter.font()
         font.setPointSize(7)
-        font.setFamily("Courier New")
+        font.setFamily("SF Mono")
         painter.setFont(font)
         label_color = QColor(56, 189, 248, 60)
 
@@ -259,7 +259,7 @@ class AutoStateView(QWidget):
             lf = painter.font()
             lf.setPointSize(7)
             lf.setBold(True)
-            lf.setFamily("Courier New")
+            lf.setFamily("SF Mono")
             painter.setFont(lf)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
             painter.restore()
@@ -350,7 +350,7 @@ class HitchGauge(QWidget):
         self._deg: float = 0.0
         self._connected: bool = False
         self._label_text = label
-        self.setMinimumSize(130, 110)
+        self.setMinimumSize(165, 128)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
     def setValue(self, deg: float) -> None:
@@ -362,68 +362,149 @@ class HitchGauge(QWidget):
         self.update()
 
     def sizeHint(self) -> QSize:
-        return QSize(140, 110)
+        return QSize(175, 128)
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
         w, h = self.width(), self.height()
-        painter.fillRect(self.rect(), QColor("#0b1322"))
 
-        arc_h = int(h * 0.72)
-        cx = w / 2.0
-        cy = arc_h * 1.0
-        radius = min(cx - 12, arc_h - 8)
-        arc_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+        # ── background ────────────────────────────────────────────── #
+        bg = QLinearGradient(0, 0, 0, h)
+        bg.setColorAt(0.0, QColor("#0d1628"))
+        bg.setColorAt(1.0, QColor("#080e1a"))
+        painter.fillRect(self.rect(), bg)
 
-        arc_pen_w = 10
-
-        def draw_arc_segment(start_angle_deg: float, span_deg: float, color: str) -> None:
-            pen = QPen(QColor(color), arc_pen_w)
-            pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-            painter.setPen(pen)
-            painter.drawArc(arc_rect, int(start_angle_deg * 16), int(span_deg * 16))
-
-        draw_arc_segment(0, self._SAFE_DEG, "#22c55e")
-        draw_arc_segment(self._SAFE_DEG, self._WARN_DEG - self._SAFE_DEG, "#eab308")
-        draw_arc_segment(self._WARN_DEG, 90.0 - self._WARN_DEG, "#ef4444")
-        draw_arc_segment(180.0 - self._SAFE_DEG, self._SAFE_DEG, "#22c55e")
-        draw_arc_segment(180.0 - self._WARN_DEG, self._WARN_DEG - self._SAFE_DEG, "#eab308")
-        draw_arc_segment(90.0, 90.0 - self._WARN_DEG, "#ef4444")
-
-        painter.setPen(QPen(QColor("#475569"), 1))
-        painter.drawLine(int(cx), int(cy - radius + 2), int(cx), int(cy - radius - 6))
-
-        needle_angle_rad = math.radians(90.0 - self._deg)
-        needle_len = radius - arc_pen_w // 2 - 2
-        nx = cx + needle_len * math.cos(needle_angle_rad)
-        ny = cy - needle_len * math.sin(needle_angle_rad)
-        needle_color = "#f0f9ff" if self._connected else "#334155"
-        needle_pen = QPen(QColor(needle_color), 3)
-        needle_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(needle_pen)
-        painter.drawLine(int(cx), int(cy), int(nx), int(ny))
-
-        painter.setBrush(QBrush(QColor(needle_color)))
+        # ── top accent bar ─────────────────────────────────────────── #
+        accent = QColor("#0ea5e9") if self._connected else QColor("#1e3a5f")
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(accent))
+        painter.drawRect(0, 0, w, 2)
+
+        # ── geometry ───────────────────────────────────────────────── #
+        cx = w / 2.0
+        cy = h * 0.64
+        radius = min(cx - 14, cy - 8)
+        arc_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+        dim = 80 if not self._connected else 255
+
+        # ── background track (full 180°, dark) ────────────────────── #
+        track_pen = QPen(QColor(18, 30, 54, 220), 9)
+        track_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        painter.setPen(track_pen)
+        painter.drawArc(arc_rect, 0, 180 * 16)
+
+        # ── colour zones (thin, on top of track) ──────────────────── #
+        safe, warn = self._SAFE_DEG, self._WARN_DEG
+
+        def draw_zone(qt_start: float, qt_span: float, color: str) -> None:
+            c = QColor(color)
+            c.setAlpha(dim)
+            p = QPen(c, 5)
+            p.setCapStyle(Qt.PenCapStyle.FlatCap)
+            painter.setPen(p)
+            painter.drawArc(arc_rect, int(qt_start * 16), int(qt_span * 16))
+
+        draw_zone(0,           safe,        "#22c55e")
+        draw_zone(safe,        warn - safe, "#eab308")
+        draw_zone(warn,        90 - warn,   "#ef4444")
+        draw_zone(180 - safe,  safe,        "#22c55e")
+        draw_zone(180 - warn,  warn - safe, "#eab308")
+        draw_zone(90,          90 - warn,   "#ef4444")
+
+        # ── tick marks ─────────────────────────────────────────────── #
+        font = painter.font()
+        font.setFamily("SF Mono")
+        font.setPointSize(5)
+        painter.setFont(font)
+
+        for tick_deg in range(-90, 91, 15):
+            a = math.radians(90.0 - tick_deg)
+            is_major = (tick_deg % 45 == 0)
+            outer_r = radius + 5
+            inner_r = radius - (9 if is_major else 4)
+            ta = 160 if not self._connected else (230 if is_major else 110)
+            painter.setPen(QPen(QColor(90, 130, 190, ta), 1.5 if is_major else 0.8))
+            cos_a, sin_a = math.cos(a), math.sin(a)
+            painter.drawLine(
+                int(cx + outer_r * cos_a), int(cy - outer_r * sin_a),
+                int(cx + inner_r * cos_a), int(cy - inner_r * sin_a),
+            )
+            if is_major and tick_deg in (-90, 0, 90):
+                lbl_r = radius - 20
+                lx = cx + lbl_r * cos_a
+                ly = cy - lbl_r * sin_a
+                painter.setPen(QPen(QColor(80, 120, 180, ta)))
+                painter.drawText(
+                    QRectF(lx - 12, ly - 7, 24, 14),
+                    Qt.AlignmentFlag.AlignCenter,
+                    "0" if tick_deg == 0 else str(abs(tick_deg)),
+                )
+
+        # ── triangular needle ──────────────────────────────────────── #
+        na = math.radians(90.0 - self._deg)
+        tip_len = radius - 11
+        base_back, half_w = 9, 3.5
+        ddx, ddy = math.cos(na), -math.sin(na)
+        ppx, ppy = -ddy, ddx
+
+        tip = QPointF(cx + ddx * tip_len,                    cy + ddy * tip_len)
+        bl  = QPointF(cx - ddx * base_back + ppx * half_w,  cy - ddy * base_back + ppy * half_w)
+        br  = QPointF(cx - ddx * base_back - ppx * half_w,  cy - ddy * base_back - ppy * half_w)
+        poly = QPolygonF([tip, bl, br])
+
+        if self._connected:
+            for gw, ga in ((10, 8), (6, 20), (3, 45)):
+                gp = QPen(QColor(56, 189, 248, ga), gw)
+                gp.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(gp)
+                painter.drawLine(int(cx), int(cy), int(tip.x()), int(tip.y()))
+            painter.setBrush(QBrush(QColor("#f0f9ff")))
+            painter.setPen(QPen(QColor(56, 189, 248, 160), 0.5))
+        else:
+            painter.setBrush(QBrush(QColor("#334155")))
+            painter.setPen(QPen(QColor("#475569"), 0.5))
+        painter.drawPolygon(poly)
+
+        # ── pivot hub ─────────────────────────────────────────────── #
+        painter.setPen(Qt.PenStyle.NoPen)
+        if self._connected:
+            for rg, ag in ((9, 10), (6, 25)):
+                painter.setBrush(QBrush(QColor(56, 189, 248, ag)))
+                painter.drawEllipse(int(cx - rg), int(cy - rg), rg * 2, rg * 2)
+            painter.setBrush(QBrush(QColor("#e0f2fe")))
+        else:
+            painter.setBrush(QBrush(QColor("#334155")))
         painter.drawEllipse(int(cx - 4), int(cy - 4), 8, 8)
 
+        # ── digital readout ────────────────────────────────────────── #
         value_str = f"{self._deg:+.1f}°" if self._connected else "---"
-        painter.setPen(QPen(QColor("#e2e8f0" if self._connected else "#475569")))
-        font = painter.font()
-        font.setFamily("Courier New")
-        font.setPointSize(11)
+        val_color = QColor("#38bdf8") if self._connected else QColor("#475569")
+        painter.setPen(QPen(val_color))
+        font.setFamily("SF Mono")
+        font.setPointSize(10)
         font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.0)
         painter.setFont(font)
-        text_y = arc_h + int((h - arc_h) * 0.45)
-        painter.drawText(self.rect().adjusted(0, text_y - h, 0, 0), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, value_str)
+        bottom_area = h - cy
+        painter.drawText(
+            QRectF(0, cy + 4, w, bottom_area * 0.54),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+            value_str,
+        )
 
-        painter.setPen(QPen(QColor("#64748b")))
-        font.setPointSize(9)
+        # ── label (below readout) ──────────────────────────────────── #
+        painter.setPen(QPen(QColor("#4a6080")))
+        font.setFamily("Avenir Next")
+        font.setPointSize(6)
         font.setBold(False)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
         painter.setFont(font)
-        painter.drawText(self.rect().adjusted(0, 4, 0, 0), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._label_text)
+        painter.drawText(
+            QRectF(4, h - 19, w - 8, 17),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+            self._label_text,
+        )
 
         painter.end()
 
@@ -431,6 +512,7 @@ class HitchGauge(QWidget):
 class TelemetryCard(QWidget):
     def __init__(self, initial_value: str = "---", label: str = "", parent=None):
         super().__init__(parent)
+<<<<<<< Updated upstream
         self.setFixedHeight(72)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(
@@ -439,22 +521,58 @@ class TelemetryCard(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(0)
+=======
+        self._connected = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 12, 10, 8)
+        layout.setSpacing(2)
+>>>>>>> Stashed changes
 
         self._value_label = QLabel(initial_value)
         self._value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._value_label.setStyleSheet(
+<<<<<<< Updated upstream
             "font-family: 'Courier New', 'Consolas', monospace; font-size: 22px; "
+=======
+            "font-family: 'SF Mono', 'Menlo', monospace; font-size: 26px; "
+>>>>>>> Stashed changes
             "color: #e2e8f0; background: transparent; border: none;"
         )
 
         self._label = QLabel(label)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setStyleSheet(
-            "font-size: 10px; color: #64748b; background: transparent; border: none;"
+            "font-size: 10px; letter-spacing: 1px; color: #64748b; "
+            "background: transparent; border: none;"
         )
 
         layout.addWidget(self._value_label)
         layout.addWidget(self._label)
+
+    def setConnected(self, connected: bool) -> None:
+        self._connected = connected
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        w, h = self.width(), self.height()
+
+        bg = QLinearGradient(0, 0, 0, h)
+        bg.setColorAt(0.0, QColor("#0d1628"))
+        bg.setColorAt(1.0, QColor("#080e1a"))
+        painter.fillRect(self.rect(), bg)
+
+        painter.setPen(QPen(QColor("#1e3a5f"), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 6, 6)
+
+        accent = QColor("#0ea5e9") if self._connected else QColor("#1e3a5f")
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(accent))
+        painter.drawRect(0, 0, w, 2)
+
+        painter.end()
 
     def setText(self, text: str) -> None:
         self._value_label.setText(text)
@@ -544,6 +662,7 @@ class DashboardHeader(QWidget):
         painter.drawRect(0, 8, 3, H - 16)
 
         font = painter.font()
+<<<<<<< Updated upstream
         font.setFamily("Segoe UI")
 
         # Calculate badge dimensions first
@@ -562,22 +681,47 @@ class DashboardHeader(QWidget):
 
         # Draw main title
         font.setPointSize(16)
+=======
+        font.setFamily("Avenir Next")
+        font.setPointSize(13)
+>>>>>>> Stashed changes
         font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4.0)
         painter.setFont(font)
 
+        title_w = W - 220
         glow_color = QColor(56, 189, 248, 40)
         painter.setPen(QPen(glow_color))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
+<<<<<<< Updated upstream
                 painter.drawText(QRectF(20 + dx, dy, W - 20, H),
                                  Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
         painter.setPen(QPen(QColor("#e0f2fe")))
         painter.drawText(QRectF(20, 0, W - 20, H), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
+=======
+                painter.drawText(QRectF(20 + dx, 2 + dy, title_w, 24),
+                                 Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
+        painter.setPen(QPen(QColor("#e0f2fe")))
+        painter.drawText(QRectF(20, 2, title_w, 24), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
+>>>>>>> Stashed changes
 
         # Draw subtitle - adjust font size to fit
         font.setPointSize(8)
         font.setBold(False)
+<<<<<<< Updated upstream
+=======
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor("#38bdf8")))
+        painter.drawText(QRectF(23, 28, title_w, 20), Qt.AlignmentFlag.AlignVCenter, "AUTONOMOUS PARKING SYSTEM")
+
+        mode_colors = {"MANUAL": ("#1e3a5f", "#7dd3fc"), "AUTOMATIC": ("#14532d", "#4ade80")}
+        mbg, mfg = mode_colors.get(self._mode, ("#1e293b", "#94a3b8"))
+        badge_text = f"  {self._mode}  "
+        font.setPointSize(9)
+        font.setBold(True)
+>>>>>>> Stashed changes
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
         painter.setFont(font)
         fm = painter.fontMetrics()

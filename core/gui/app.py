@@ -1,11 +1,16 @@
 import os as _os
 import sys as _sys
+import types as _types
 
-# Allow `python app.py` in addition to `python -m truck_n_trailer.gui`
+# Allow `python app.py` without requiring `pip install -e .`
+# core/ is the truck_n_trailer package root; register it manually when running directly.
 if __package__ is None or __package__ == "":
-    _repo_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-    if _repo_root not in _sys.path:
-        _sys.path.insert(0, _repo_root)
+    _core_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    if "truck_n_trailer" not in _sys.modules:
+        _pkg = _types.ModuleType("truck_n_trailer")
+        _pkg.__path__ = [_core_dir]
+        _pkg.__package__ = "truck_n_trailer"
+        _sys.modules["truck_n_trailer"] = _pkg
     __package__ = "truck_n_trailer.gui"
 
 import argparse
@@ -34,6 +39,7 @@ try:
         QRadioButton,
         QSizePolicy,
         QSlider,
+        QSplitter,
         QStackedWidget,
         QVBoxLayout,
         QWidget,
@@ -119,8 +125,8 @@ class TruckControlGui(QWidget):
             truck_len_cm=params.TRUCK_LENGTH_CM,
             trailer_len_cm=params.TRAILER_LENGTH_CM,
         )
-        self.hitch_angle_gauge = HitchGauge("POT")
-        self.hitch_vision_gauge = HitchGauge("VISION")
+        self.hitch_angle_gauge = HitchGauge("Potentiometer Reading")
+        self.hitch_vision_gauge = HitchGauge("Vision Detected HA")
         self.calibrate_btn = QPushButton("Calibration")
         self.manual_left_rpm = TelemetryCard("0.0", "Left RPM")
         self.manual_right_rpm = TelemetryCard("0.0", "Right RPM")
@@ -134,9 +140,16 @@ class TruckControlGui(QWidget):
         self.camera_connect_btn = QPushButton("Connect")
         self.camera_disconnect_btn = QPushButton("Stop")
         self.camera_status_label = QLabel("Camera: Disconnected")
+        self.camera_status_label.setStyleSheet(
+            "padding: 3px 8px; color: #4a6080; font-size: 11px; letter-spacing: 0.5px;"
+        )
         self.camera_view = QLabel("No camera feed")
         self.camera_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
+<<<<<<< Updated upstream
         self.camera_view.setMinimumSize(560, 360)
+=======
+        self.camera_view.setMinimumSize(600, 400)
+>>>>>>> Stashed changes
         self.camera_view.setStyleSheet("background: #0f172a; border: 1px solid #475569;")
 
         self.send_timer = QTimer(self)
@@ -165,10 +178,31 @@ class TruckControlGui(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         outer.addWidget(body, stretch=1)
 
+<<<<<<< Updated upstream
         left_col = QVBoxLayout()
         right_col = QVBoxLayout()
         root.addLayout(left_col, stretch=2)
         root.addLayout(right_col, stretch=3)
+=======
+        _left_w = QWidget()
+        left_col = QVBoxLayout(_left_w)
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(5)
+        _left_w.setMaximumWidth(440)
+
+        _right_w = QWidget()
+        right_col = QVBoxLayout(_right_w)
+        right_col.setContentsMargins(0, 0, 0, 0)
+
+        _splitter = QSplitter(Qt.Orientation.Horizontal)
+        _splitter.setHandleWidth(1)
+        _splitter.addWidget(_left_w)
+        _splitter.addWidget(_right_w)
+        _splitter.setChildrenCollapsible(False)
+        _splitter.setStretchFactor(0, 2)
+        _splitter.setStretchFactor(1, 3)
+        root.addWidget(_splitter)
+>>>>>>> Stashed changes
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode:"))
@@ -511,6 +545,7 @@ class TruckControlGui(QWidget):
             )
             self.camera_view.setPixmap(pixmap)
 
+<<<<<<< Updated upstream
         if self.vision.vision_q is not None:
             vq = self.vision.vision_q
             if self.vision.goal_xy is not None:
@@ -543,6 +578,21 @@ class TruckControlGui(QWidget):
                         for p in self.auto.preview_pred_path_xy_cm
                     ]
                 )
+=======
+    def _set_connected(self, connected: bool) -> None:
+        if not connected:
+            self.auto_running = False
+            self.auto_status_label.setText("MPC: Idle")
+            self._update_hitch_angle_display(0.0)
+            self._reset_manual_stats()
+        self.connect_btn.setEnabled(not connected)
+        self.disconnect_btn.setEnabled(connected)
+        self._update_button_states()
+        self.header.set_connected(connected)
+        for card in (self.manual_rpm_value, self.manual_speed_value, self.manual_distance_value,
+                     self.auto_rpm_value, self.auto_speed_value, self.auto_distance_value):
+            card.setConnected(connected)
+>>>>>>> Stashed changes
 
     def _set_motion(self, motion: str) -> None:
         self.current_motion = motion
