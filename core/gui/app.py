@@ -145,11 +145,7 @@ class TruckControlGui(QWidget):
         )
         self.camera_view = QLabel("No camera feed")
         self.camera_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
-<<<<<<< Updated upstream
-        self.camera_view.setMinimumSize(560, 360)
-=======
         self.camera_view.setMinimumSize(600, 400)
->>>>>>> Stashed changes
         self.camera_view.setStyleSheet("background: #0f172a; border: 1px solid #475569;")
 
         self.send_timer = QTimer(self)
@@ -178,12 +174,6 @@ class TruckControlGui(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         outer.addWidget(body, stretch=1)
 
-<<<<<<< Updated upstream
-        left_col = QVBoxLayout()
-        right_col = QVBoxLayout()
-        root.addLayout(left_col, stretch=2)
-        root.addLayout(right_col, stretch=3)
-=======
         _left_w = QWidget()
         left_col = QVBoxLayout(_left_w)
         left_col.setContentsMargins(0, 0, 0, 0)
@@ -202,7 +192,6 @@ class TruckControlGui(QWidget):
         _splitter.setStretchFactor(0, 2)
         _splitter.setStretchFactor(1, 3)
         root.addWidget(_splitter)
->>>>>>> Stashed changes
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode:"))
@@ -545,7 +534,6 @@ class TruckControlGui(QWidget):
             )
             self.camera_view.setPixmap(pixmap)
 
-<<<<<<< Updated upstream
         if self.vision.vision_q is not None:
             vq = self.vision.vision_q
             if self.vision.goal_xy is not None:
@@ -578,21 +566,6 @@ class TruckControlGui(QWidget):
                         for p in self.auto.preview_pred_path_xy_cm
                     ]
                 )
-=======
-    def _set_connected(self, connected: bool) -> None:
-        if not connected:
-            self.auto_running = False
-            self.auto_status_label.setText("MPC: Idle")
-            self._update_hitch_angle_display(0.0)
-            self._reset_manual_stats()
-        self.connect_btn.setEnabled(not connected)
-        self.disconnect_btn.setEnabled(connected)
-        self._update_button_states()
-        self.header.set_connected(connected)
-        for card in (self.manual_rpm_value, self.manual_speed_value, self.manual_distance_value,
-                     self.auto_rpm_value, self.auto_speed_value, self.auto_distance_value):
-            card.setConnected(connected)
->>>>>>> Stashed changes
 
     def _set_motion(self, motion: str) -> None:
         self.current_motion = motion
@@ -653,6 +626,10 @@ class TruckControlGui(QWidget):
         self.disconnect_btn.setEnabled(connected)
         self._update_button_states()
         self.header.set_connected(connected)
+        for card in (self.manual_left_rpm, self.manual_right_rpm,
+                     self.auto_cmd_left_rpm, self.auto_cmd_right_rpm,
+                     self.auto_act_left_rpm, self.auto_act_right_rpm):
+            card.setConnected(connected)
 
     def _update_button_states(self) -> None:
         connected = self.sender is not None

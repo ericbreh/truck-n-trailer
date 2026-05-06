@@ -512,30 +512,17 @@ class HitchGauge(QWidget):
 class TelemetryCard(QWidget):
     def __init__(self, initial_value: str = "---", label: str = "", parent=None):
         super().__init__(parent)
-<<<<<<< Updated upstream
+        self._connected = False
         self.setFixedHeight(72)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(
-            "background-color: #0b1322; border: 1px solid #1e3a5f; border-radius: 6px;"
-        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(0)
-=======
-        self._connected = False
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 12, 10, 8)
-        layout.setSpacing(2)
->>>>>>> Stashed changes
 
         self._value_label = QLabel(initial_value)
         self._value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._value_label.setStyleSheet(
-<<<<<<< Updated upstream
-            "font-family: 'Courier New', 'Consolas', monospace; font-size: 22px; "
-=======
-            "font-family: 'SF Mono', 'Menlo', monospace; font-size: 26px; "
->>>>>>> Stashed changes
+            "font-family: 'SF Mono', 'Menlo', monospace; font-size: 22px; "
             "color: #e2e8f0; background: transparent; border: none;"
         )
 
@@ -662,8 +649,7 @@ class DashboardHeader(QWidget):
         painter.drawRect(0, 8, 3, H - 16)
 
         font = painter.font()
-<<<<<<< Updated upstream
-        font.setFamily("Segoe UI")
+        font.setFamily("Avenir Next")
 
         # Calculate badge dimensions first
         mode_colors = {"MANUAL": ("#1e3a5f", "#7dd3fc"), "AUTOMATIC": ("#14532d", "#4ade80")}
@@ -680,11 +666,7 @@ class DashboardHeader(QWidget):
         avail_w = W - 22 - bw - 56
 
         # Draw main title
-        font.setPointSize(16)
-=======
-        font.setFamily("Avenir Next")
         font.setPointSize(13)
->>>>>>> Stashed changes
         font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4.0)
         painter.setFont(font)
@@ -694,34 +676,14 @@ class DashboardHeader(QWidget):
         painter.setPen(QPen(glow_color))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-<<<<<<< Updated upstream
                 painter.drawText(QRectF(20 + dx, dy, W - 20, H),
                                  Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
         painter.setPen(QPen(QColor("#e0f2fe")))
         painter.drawText(QRectF(20, 0, W - 20, H), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
-=======
-                painter.drawText(QRectF(20 + dx, 2 + dy, title_w, 24),
-                                 Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
-        painter.setPen(QPen(QColor("#e0f2fe")))
-        painter.drawText(QRectF(20, 2, title_w, 24), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
->>>>>>> Stashed changes
 
         # Draw subtitle - adjust font size to fit
         font.setPointSize(8)
         font.setBold(False)
-<<<<<<< Updated upstream
-=======
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
-        painter.setFont(font)
-        painter.setPen(QPen(QColor("#38bdf8")))
-        painter.drawText(QRectF(23, 28, title_w, 20), Qt.AlignmentFlag.AlignVCenter, "AUTONOMOUS PARKING SYSTEM")
-
-        mode_colors = {"MANUAL": ("#1e3a5f", "#7dd3fc"), "AUTOMATIC": ("#14532d", "#4ade80")}
-        mbg, mfg = mode_colors.get(self._mode, ("#1e293b", "#94a3b8"))
-        badge_text = f"  {self._mode}  "
-        font.setPointSize(9)
-        font.setBold(True)
->>>>>>> Stashed changes
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
         painter.setFont(font)
         fm = painter.fontMetrics()
