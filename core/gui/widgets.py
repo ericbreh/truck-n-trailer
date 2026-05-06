@@ -614,7 +614,7 @@ class DashboardHeader(QWidget):
         self._connected = False
         self._mode = "MANUAL"
         self._pulse_t = 0.0
-        self.setFixedHeight(52)
+        self.setFixedHeight(68)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -666,35 +666,34 @@ class DashboardHeader(QWidget):
         avail_w = W - 22 - bw - 56
 
         # Draw main title
-        font.setPointSize(13)
+        font.setPointSize(20)
         font.setBold(True)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4.0)
         painter.setFont(font)
 
-        title_w = W - 220
+        title_top = int(H * 0.04)
+        title_h = int(H * 0.60)
         glow_color = QColor(56, 189, 248, 40)
         painter.setPen(QPen(glow_color))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                painter.drawText(QRectF(20 + dx, dy, W - 20, H),
+                painter.drawText(QRectF(20 + dx, title_top + dy, avail_w, title_h),
                                  Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
         painter.setPen(QPen(QColor("#e0f2fe")))
-        painter.drawText(QRectF(20, 0, W - 20, H), Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
+        painter.drawText(QRectF(20, title_top, avail_w, title_h),
+                         Qt.AlignmentFlag.AlignVCenter, "TRUCK N TRAILER")
 
-        # Draw subtitle - adjust font size to fit
-        font.setPointSize(8)
+        # Draw subtitle
+        sub_top = title_top + title_h
+        sub_h = H - sub_top
+        font.setPointSize(11)
         font.setBold(False)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
         painter.setFont(font)
-        fm = painter.fontMetrics()
-        text = "AUTONOMOUS PARKING SYSTEM"
-        while fm.horizontalAdvance(text) > avail_w and font.pointSize() > 6:
-            font.setPointSize(font.pointSize() - 1)
-            painter.setFont(font)
-            fm = painter.fontMetrics()
         painter.setPen(QPen(QColor("#38bdf8")))
-        painter.drawText(QRectF(22, 26, avail_w, H - 26),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+        painter.drawText(QRectF(23, sub_top, avail_w, sub_h),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                         "AUTONOMOUS PARKING SYSTEM")
 
         # Draw mode badge
         bh = 22
