@@ -235,9 +235,11 @@ bool pot_adc_init(void) {
   if (err != ESP_OK) {
     adc_oneshot_del_unit(s_pot_adc_handle);
     s_pot_adc_handle = NULL;
+    s_pot_adc_ready = false;
     return false;
   }
 
+  s_pot_adc_ready = true;
   return true;
 }
 
