@@ -211,11 +211,20 @@ class TruckControlGui(QWidget):
 
         hitch_group = QGroupBox("Hitch Angle")
         hitch_layout = QVBoxLayout(hitch_group)
-        hitch_gauges = QHBoxLayout()
-        hitch_gauges.addWidget(self.hitch_angle_gauge)
-        hitch_gauges.addWidget(self.hitch_vision_gauge)
-        hitch_layout.addLayout(hitch_gauges)
-        hitch_layout.addWidget(self.calibrate_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        hitch_grid = QGridLayout()
+        hitch_grid.setHorizontalSpacing(8)
+        hitch_grid.setColumnStretch(0, 1)
+        hitch_grid.setColumnStretch(1, 1)
+        hitch_grid.addWidget(
+            self.hitch_angle_gauge, 0, 0, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
+        hitch_grid.addWidget(
+            self.hitch_vision_gauge, 0, 1, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
+        hitch_grid.addWidget(
+            self.calibrate_btn, 1, 0, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
+        hitch_layout.addLayout(hitch_grid)
         left_col.addWidget(hitch_group)
 
         manual_page = QWidget()
