@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
 try:
     from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtGui import QImage, QPixmap
+    from .animations import BootOverlay, CameraPlaceholder, animate_tab_switch
     from PyQt6.QtWidgets import (
         QApplication,
         QButtonGroup,
@@ -143,10 +144,8 @@ class TruckControlGui(QWidget):
         self.camera_status_label.setStyleSheet(
             "padding: 3px 8px; color: #4a6080; font-size: 11px; letter-spacing: 0.5px;"
         )
-        self.camera_view = QLabel("No camera feed")
-        self.camera_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.camera_view = CameraPlaceholder()
         self.camera_view.setMinimumSize(600, 400)
-        self.camera_view.setStyleSheet("background: #0f172a; border: 1px solid #475569;")
 
         self.send_timer = QTimer(self)
         self.send_timer.timeout.connect(self._tick_send)
@@ -424,7 +423,6 @@ class TruckControlGui(QWidget):
         return self.mode_stack.currentIndex() == 0
 
     def _on_mode_changed(self, mode_id: int) -> None:
-        self.mode_stack.setCurrentIndex(mode_id)
         self.header.set_mode("MANUAL" if mode_id == 0 else "AUTOMATIC")
         if mode_id == 0:
             self.auto.stop()
@@ -436,6 +434,8 @@ class TruckControlGui(QWidget):
             self.auto_status_label.setText("MPC: Idle")
             self._reset_auto_motor_display()
             self._update_button_states()
+
+        animate_tab_switch(self.mode_stack, mode_id)
 
     def _auto_start(self) -> None:
         if self.sender is None:
@@ -741,6 +741,7 @@ def main() -> int:
     app.setStyle("Fusion")
     window = TruckControlGui(args)
     window.show()
+    window._boot_overlay = BootOverlay(window)
     return app.exec()
 
 
